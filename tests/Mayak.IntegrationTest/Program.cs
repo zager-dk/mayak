@@ -174,6 +174,45 @@ Check("самопроверка Xray выполняется и честно со
 Check("самопроверка не оставила временный конфиг", !File.Exists(XrayRoot + "/tmp/mayak_selftest.json") && !File.Exists("/tmp/mayak_selftest.json"));
 
 
+Console.WriteLine("Выдача по постоянному списку:");
+{
+    var anna = new Person { Name = "Анна Список", Devices = { new PersonDevice { Name = "iPhone", Kind = DeviceKind.IPhone }, new PersonDevice { Name = "Ноутбук", Kind = DeviceKind.Windows, DownMbps = 50, UpMbps = 0 } } };
+    var boris = new Person { Name = "Борис Список", Devices = { new PersonDevice { Name = "Android", Kind = DeviceKind.Android } } };
+    int usersBefore = snap.Db.Users.Count;
+    var items = server.GrantPeople(snap, new[] { anna, boris });
+    snap = server.Load();
+    var annaUser = snap.Db.Users.FirstOrDefault(u => u.PersonId == anna.Id);
+    Check("заведены оба человека и три устройства", snap.Db.Users.Count == usersBefore + 2 && items.Count(i => i.Created) == 3 && annaUser?.Devices.Count == 2);
+    var allIps = snap.Db.AllDevices.Select(d => d.Ip).Append(snap.Db.Probe!.AwgIp).ToList();
+    Check("IP не пересекаются (в том числе со служебной учёткой)", allIps.Distinct().Count() == allIps.Count);
+    Check("все новые устройства на сервере и в Xray", items.All(i => snap.PeersOnServer.Contains(i.Device.PublicKey))
+        && XrayConfig.ReadClients(File.ReadAllText(XrayRoot + MayakServer.XrayServerJson)).Count(c => c.Email.StartsWith("mayak:")) >= 3);
+    Check("лимиты: свой у ноутбука, по умолчанию у остальных", annaUser!.Devices.Any(d => d.Name == "Ноутбук" && d.DownMbps == 50 && d.UpMbps == 0)
+        && annaUser.Devices.Any(d => d.Name == "iPhone" && d.DownMbps == snap.Db.DefaultDownMbps));
+
+    var keysBefore = snap.Db.AllDevices.ToDictionary(d => d.Id, d => d.PrivateKey);
+    var again = server.GrantPeople(snap, new[] { anna, boris });
+    Check("повторная выдача ничего не дублирует и не меняет ключи", again.All(i => !i.Created) && again.Count == 3
+        && snap.Db.AllDevices.All(d => keysBefore.TryGetValue(d.Id, out var k) && k == d.PrivateKey));
+
+    anna.Devices.Add(new PersonDevice { Name = "iPad", Kind = DeviceKind.IPhone });
+    var third = server.GrantPeople(snap, new[] { anna });
+    Check("добавленное в список устройство выдаётся отдельно", third.Count(i => i.Created) == 1 && third.Single(i => i.Created).Device.Name == "iPad");
+
+    var renamed = new Person { Name = "Анна Список", Devices = { new PersonDevice { Name = "iPhone", Kind = DeviceKind.IPhone } } };
+    var byName = server.GrantPeople(snap, new[] { renamed });
+    Check("человек из другого списка находится по имени, устройство — по имени и типу", byName.Count == 1 && !byName[0].Created);
+
+    var exportDir = Path.Combine(Path.GetTempPath(), "mayak_export_test");
+    if (Directory.Exists(exportDir)) Directory.Delete(exportDir, true);
+    var folder = AccessFiles.SaveAll(exportDir, snap, items);
+    var files = Directory.GetFiles(folder, "*", SearchOption.AllDirectories).Select(Path.GetFileName).ToList();
+    Check("файлы для всех: .vpn, .conf с QR и сводка", files.Count(f => f!.EndsWith(".vpn")) == 2 && files.Count(f => f!.EndsWith(".conf")) == 1
+        && files.Count(f => f!.EndsWith(".png")) == 1 && files.Contains("Доступы.txt"), string.Join(", ", files));
+    var vpnFile = Directory.GetFiles(folder, "*.vpn", SearchOption.AllDirectories).First();
+    Check("в .vpn — ключ vpn://", File.ReadAllText(vpnFile).StartsWith("vpn://"));
+}
+
 Console.WriteLine("Входной сервер (каскад):");
 {
     using var relay = new RelayServer(new SshCredentials { Host = host, Port = port, User = user, Password = password });

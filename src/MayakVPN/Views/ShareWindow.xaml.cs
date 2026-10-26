@@ -71,20 +71,7 @@ public partial class ShareWindow : Window
         else QrAmnezia.IsChecked = true;
     }
 
-    private string AutoSave(string exportFolder, ConfigFormat format)
-    {
-        var folder = Path.Combine(exportFolder, Safe(_snap.Db.ServerTitle), Safe(_user.Name));
-        Directory.CreateDirectory(folder);
-        var file = Path.Combine(folder, ClientConfigFactory.SuggestFileName(_user.Name, _device, format));
-        File.WriteAllText(file, format == ConfigFormat.AwgConf ? _confText : _vpnKey, new UTF8Encoding(false));
-        return file;
-    }
-
-    private static string Safe(string name)
-    {
-        foreach (var c in Path.GetInvalidFileNameChars()) name = name.Replace(c, '_');
-        return name.Trim().Length == 0 ? "_" : name.Trim();
-    }
+    private string AutoSave(string exportFolder, ConfigFormat format) => AccessFiles.Save(exportFolder, _snap, _user, _device);
 
     private static string InstructionsFor(DeviceKind kind) => kind switch
     {

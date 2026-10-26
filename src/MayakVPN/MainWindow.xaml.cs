@@ -45,6 +45,14 @@ public partial class MainWindow : Window, IUi
         return dlg.ShowDialog() == true ? dlg.Result : null;
     }
 
+    public void ShowPeople(ServerSnapshot? snap) => new PeopleWindow(snap) { Owner = this }.ShowDialog();
+
+    public IReadOnlyList<Person>? AskGrant(ServerSnapshot snap)
+    {
+        var dlg = new GrantDialog(snap) { Owner = this };
+        return dlg.ShowDialog() == true ? dlg.Result : null;
+    }
+
     public void ShowAddressCheck(string? host) =>
         new AddressCheckDialog(_vm.CheckAddressAsync, host) { Owner = this }.ShowDialog();
 

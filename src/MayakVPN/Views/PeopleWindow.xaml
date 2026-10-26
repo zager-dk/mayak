@@ -1,0 +1,121 @@
+<Window x:Class="MayakVPN.Views.PeopleWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Список людей" Width="820" Height="560" MinWidth="680" MinHeight="420"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        Style="{StaticResource BaseWindow}">
+    <Window.Resources>
+        <Style x:Key="Row" TargetType="ListBoxItem">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Bd" Padding="14,8" Background="Transparent" Cursor="Hand" BorderThickness="3,0,0,0" BorderBrush="Transparent">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#F7F9FB" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#FFF4DD" />
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource Amber}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <DockPanel Margin="20,16,20,16">
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+            <Button DockPanel.Dock="Right" x:Name="ImportButton" Content="Взять пользователей с сервера" Click="Import" Margin="0" />
+            <StackPanel>
+                <TextBlock Style="{StaticResource H2}" Text="Постоянный список людей" Margin="0" />
+                <TextBlock Style="{StaticResource Hint}" Margin="0,2,0,0"
+                           Text="Один список на все серверы. Заведите людей и их устройства один раз, потом на любом сервере — «Выдать доступ по списку»." />
+            </StackPanel>
+        </DockPanel>
+
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+            <Button Style="{StaticResource PrimaryButton}" Content="Готово" IsCancel="True" IsDefault="True" Margin="0" />
+        </StackPanel>
+
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="280" />
+                <ColumnDefinition Width="14" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <Border Style="{StaticResource CardBorder}" Padding="0">
+                <DockPanel>
+                    <DockPanel DockPanel.Dock="Top" Margin="14,10,8,8">
+                        <Button DockPanel.Dock="Right" Style="{StaticResource IconButton}" Content="+" FontSize="20" Padding="8,0" ToolTip="Добавить человека" Click="AddPerson" />
+                        <TextBlock x:Name="CountText" Style="{StaticResource H2}" Text="Люди" Margin="0" VerticalAlignment="Center" />
+                    </DockPanel>
+                    <Grid>
+                        <ListBox x:Name="PeopleList" BorderThickness="0,1,0,0" BorderBrush="{StaticResource Line}" ItemContainerStyle="{StaticResource Row}"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled" SelectionChanged="PersonSelected" MouseDoubleClick="PeopleList_DoubleClick">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding Summary}" Foreground="{StaticResource Muted}" FontSize="12" TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                        <StackPanel x:Name="EmptyPeople" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <TextBlock Text="Список пуст" Foreground="{StaticResource Muted}" HorizontalAlignment="Center" />
+                            <Button Style="{StaticResource PrimaryButton}" Content="+ Человек" Click="AddPerson" Margin="0,10,0,0" HorizontalAlignment="Center" />
+                        </StackPanel>
+                    </Grid>
+                </DockPanel>
+            </Border>
+
+            <Border Grid.Column="2" Style="{StaticResource CardBorder}" Padding="0">
+                <Grid>
+                    <DockPanel x:Name="PersonPanel">
+                        <DockPanel DockPanel.Dock="Top" Margin="16,10,12,8">
+                            <Button DockPanel.Dock="Right" Style="{StaticResource PrimaryButton}" Content="+ Устройство" Click="AddDevice" Margin="0" VerticalAlignment="Top" />
+                            <StackPanel>
+                                <TextBlock x:Name="PersonName" Style="{StaticResource H2}" Margin="0" TextTrimming="CharacterEllipsis" />
+                                <TextBlock x:Name="PersonNote" Style="{StaticResource Hint}" Margin="0,2,0,0" />
+                                <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                    <Button Style="{StaticResource LinkButton}" Content="Изменить" Click="EditPerson" />
+                                    <Button Style="{StaticResource DangerLink}" Content="Удалить из списка" Click="DeletePerson" />
+                                </StackPanel>
+                            </StackPanel>
+                        </DockPanel>
+                        <Grid>
+                            <ListBox x:Name="DevicesList" BorderThickness="0,1,0,0" BorderBrush="{StaticResource Line}" ItemContainerStyle="{StaticResource Row}"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled" MouseDoubleClick="DevicesList_DoubleClick">
+                                <ListBox.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Изменить…" Click="EditDevice" />
+                                        <MenuItem Header="Убрать из списка" Click="DeleteDevice" />
+                                    </ContextMenu>
+                                </ListBox.ContextMenu>
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <DockPanel>
+                                            <TextBlock DockPanel.Dock="Right" Text="{Binding Limit}" Foreground="{StaticResource Muted}" FontSize="12" VerticalAlignment="Center" />
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                                <TextBlock Text="{Binding Kind}" Foreground="{StaticResource Muted}" FontSize="12" />
+                                            </StackPanel>
+                                        </DockPanel>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                            <TextBlock x:Name="EmptyDevices" Text="Добавьте устройства — на каждое будет выдан свой файл." Foreground="{StaticResource Muted}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Grid>
+                    </DockPanel>
+                    <TextBlock x:Name="NoPerson" Text="Выберите человека слева" Foreground="{StaticResource Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Grid>
+            </Border>
+        </Grid>
+    </DockPanel>
+</Window>

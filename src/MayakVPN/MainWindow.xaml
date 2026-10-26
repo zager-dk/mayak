@@ -50,6 +50,10 @@
                 </StackPanel>
 
                 <StackPanel DockPanel.Dock="Bottom">
+                    <Button Style="{StaticResource SidebarLink}" Command="{Binding ShowPeopleCommand}"
+                            ToolTip="Постоянный список людей и их устройств — общий для всех серверов">
+                        <TextBlock><Run Text="☰" FontSize="14" /><Run Text="   Список людей" /></TextBlock>
+                    </Button>
                     <Button Style="{StaticResource SidebarLink}" Command="{Binding CheckAddressCommand}"
                             ToolTip="Доступен ли IP нового сервера из России — до установки VPN">
                         <TextBlock><Run Text="⌕" FontSize="15" /><Run Text="   Проверить адрес…" /></TextBlock>
@@ -263,6 +267,10 @@
                                                 ToolTip="Новый пользователь" Command="{Binding AddUserCommand}" />
                                         <TextBlock Style="{StaticResource H2}" Text="Пользователи" Margin="0" VerticalAlignment="Center" />
                                     </DockPanel>
+                                    <Border DockPanel.Dock="Bottom" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="12,10">
+                                        <Button Content="Выдать доступ по списку…" Command="{Binding GrantCommand}" Margin="0"
+                                                ToolTip="Завести на сервере всех из постоянного списка и сохранить файлы для всех разом" />
+                                    </Border>
                                     <Grid>
                                         <ListBox ItemsSource="{Binding Users}" SelectedItem="{Binding SelectedUser}" BorderThickness="0,1,0,0"
                                                  BorderBrush="{StaticResource Line}" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
@@ -291,8 +299,10 @@
                                         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
                                                     Visibility="{Binding Users.Count, Converter={StaticResource NotEmptyVis}, ConverterParameter=invert}">
                                             <TextBlock Text="Пока никого нет" Foreground="{StaticResource Muted}" HorizontalAlignment="Center" />
-                                            <Button Style="{StaticResource PrimaryButton}" Content="+ Пользователь" Command="{Binding AddUserCommand}"
+                                            <Button Style="{StaticResource PrimaryButton}" Content="Выдать доступ по списку…" Command="{Binding GrantCommand}"
                                                     Margin="0,10,0,0" HorizontalAlignment="Center" />
+                                            <Button Style="{StaticResource LinkButton}" Content="или добавить одного" Command="{Binding AddUserCommand}"
+                                                    Margin="0,8,0,0" HorizontalAlignment="Center" />
                                         </StackPanel>
                                     </Grid>
                                 </DockPanel>

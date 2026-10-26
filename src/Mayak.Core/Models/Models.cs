@@ -78,6 +78,33 @@ public sealed class VpnUser
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public bool Enabled { get; set; } = true;
     public List<VpnDevice> Devices { get; set; } = new();
+
+    /// <summary>Человек из постоянного списка Маяка (на компьютере), которому соответствует этот пользователь.</summary>
+    public Guid? PersonId { get; set; }
+}
+
+/// <summary>
+/// Человек из постоянного списка. Список хранится на компьютере и общий для всех серверов:
+/// по нему Маяк одной кнопкой заводит пользователей и устройства на любом сервере.
+/// Ключей здесь нет — они свои на каждом сервере.
+/// </summary>
+public sealed class Person
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string Name { get; set; } = "";
+    public string Note { get; set; } = "";
+    public List<PersonDevice> Devices { get; set; } = new();
+}
+
+/// <summary>Устройство человека из постоянного списка (шаблон для выдачи).</summary>
+public sealed class PersonDevice
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string Name { get; set; } = "";
+    public DeviceKind Kind { get; set; } = DeviceKind.Other;
+    /// <summary>Лимиты, Мбит/с. null — по умолчанию сервера.</summary>
+    public int? DownMbps { get; set; }
+    public int? UpMbps { get; set; }
 }
 
 public sealed class VpnDevice
@@ -95,6 +122,9 @@ public sealed class VpnDevice
 
     /// <summary>UUID клиента Xray (VLESS). Пусто — Xray для устройства не выдан.</summary>
     public string XrayId { get; set; } = "";
+
+    /// <summary>Устройство из постоянного списка (PersonDevice.Id), по которому выдано это.</summary>
+    public Guid? TemplateId { get; set; }
 
     /// <summary>Лимит скачивания, Мбит/с. 0 — без ограничения.</summary>
     public int DownMbps { get; set; }

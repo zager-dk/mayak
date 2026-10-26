@@ -280,6 +280,13 @@ Console.WriteLine("Проверка адреса:");
         ForeignControl = P("github.com", 443, TcpOutcome.Error), LocalControl = P("ya.ru", 443, TcpOutcome.Error),
     }, Array.Empty<VantageResult>());
     Check("нет интернета — так и сказано", noNet.VerdictTitle.Contains("Нет интернета"));
+    var flaky = AddressCheck.Build("1.2.3.4", new VantageResult
+    {
+        IsLocal = true, Target = { P("1.2.3.4", 22, TcpOutcome.Open) },
+        ForeignControl = P("github.com", 443, TcpOutcome.Timeout), LocalControl = P("ya.ru", 443, TcpOutcome.Timeout),
+    }, new[] { new VantageResult { Name = "Москва", Failure = "нет связи со входом по SSH" } });
+    Check("цель доступна, а контрольные нет — предупреждение о сети", flaky.Verdict == CheckStatus.Ok && flaky.VerdictText.Contains("перебоями"));
+    Check("непроверенный вход не выдаётся за «вход не видит»", !flaky.VerdictText.Contains("Вход его не видит"));
 }
 
 Console.WriteLine("Скрипты в сборке:");

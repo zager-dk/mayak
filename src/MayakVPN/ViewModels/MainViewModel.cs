@@ -59,6 +59,8 @@ public sealed class MainViewModel : ObservableObject
         RunCheckCommand = new RelayCommand(() => _ = RunCheckAsync(), () => !IsBusy && !CheckRunning && (Snapshot != null || OfflineKit != null));
         CancelCheckCommand = new RelayCommand(() => _checkCts?.Cancel(), () => CheckRunning);
 
+        ShowPeopleCommand = new RelayCommand(() => _ui.ShowPeople(Snapshot));
+        GrantCommand = new RelayCommand(() => _ = GrantAsync(), () => !IsBusy && Snapshot != null && State == ServerState.Running);
         CheckAddressCommand = new RelayCommand(() => _ui.ShowAddressCheck(SelectedServer?.IsRelay == false ? SelectedServer.Host : null));
         ToggleForeignCommand = new RelayCommand(() => ShowForeign = !ShowForeign);
         OpenExportFolderCommand = new RelayCommand(OpenExportFolder);
@@ -375,6 +377,8 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand RunCheckCommand { get; }
     public RelayCommand CancelCheckCommand { get; }
     public RelayCommand CheckAddressCommand { get; }
+    public RelayCommand ShowPeopleCommand { get; }
+    public RelayCommand GrantCommand { get; }
     public RelayCommand ToggleForeignCommand { get; }
     public RelayCommand OpenExportFolderCommand { get; }
     public RelayCommand ChangeExportFolderCommand { get; }
@@ -1160,6 +1164,71 @@ public sealed class MainViewModel : ObservableObject
         await RunAsync("Удаление…", s => s.RemoveUser(snap, item.Model));
     }
 
+    /// <summary>
+    /// Пользователь, заведённый вручную, попадает и в постоянный список — чтобы потом выдать ему доступ на другом сервере одной кнопкой.
+    /// </summary>
+    private void RememberInPeople(VpnUser user, VpnDevice device)
+    {
+        try
+        {
+            var people = PeopleStore.Load();
+            var person = people.FirstOrDefault(p => p.Id == user.PersonId)
+                         ?? people.FirstOrDefault(p => string.Equals(p.Name.Trim(), user.Name.Trim(), StringComparison.CurrentCultureIgnoreCase));
+            if (person == null)
+            {
+                person = new Person { Name = user.Name, Note = user.Note };
+                people.Add(person);
+            }
+            if (!person.Devices.Any(t => t.Kind == device.Kind && string.Equals(t.Name.Trim(), device.Name.Trim(), StringComparison.CurrentCultureIgnoreCase)))
+                person.Devices.Add(new PersonDevice { Name = device.Name, Kind = device.Kind, DownMbps = device.DownMbps, UpMbps = device.UpMbps });
+            PeopleStore.Save(people);
+        }
+        catch (Exception ex)
+        {
+            AppendLog("Не удалось обновить список людей: " + FirstLine(ex.Message));
+        }
+    }
+
+    /// <summary>Выдать доступ людям из постоянного списка: недостающие пользователи и устройства + файлы для всех.</summary>
+    private async Task GrantAsync()
+    {
+        var snap = Snapshot;
+        if (snap == null) return;
+        if (PeopleStore.Load().Count == 0)
+        {
+            if (!_ui.Confirm("Список людей пока пуст. Открыть его, чтобы один раз завести людей и их устройства?", "Список людей")) return;
+            _ui.ShowPeople(snap);
+            if (PeopleStore.Load().Count == 0) return;
+        }
+        var chosen = _ui.AskGrant(snap);
+        if (chosen == null || chosen.Count == 0) return;
+
+        IReadOnlyList<GrantItem> items = Array.Empty<GrantItem>();
+        var ok = await RunAsync("Выдача доступа по списку…", s => items = s.GrantPeople(snap, chosen));
+        if (!ok)
+        {
+            await ReloadAsync(quiet: true);
+            return;
+        }
+
+        string folder;
+        try
+        {
+            folder = Mayak.Core.Export.AccessFiles.SaveAll(ExportFolder, snap, items);
+        }
+        catch (Exception ex)
+        {
+            _ui.Error("Доступ выдан, но файлы сохранить не удалось: " + ex.Message + "\n\nИх можно выдать по одному кнопкой «Выдать файл / QR».");
+            return;
+        }
+        int created = items.Count(i => i.Created);
+        int files = items.Count(i => i.Device.CanExport);
+        AppendLog($"Выдача по списку: людей {chosen.Count}, новых устройств {created}, файлов {files} → {folder}");
+        _ui.Info($"Готово: людей — {chosen.Count}, новых устройств — {created}, файлов сохранено — {files}.\n\nСейчас откроется папка. В ней по папке на человека и «Доступы.txt» — кому какой файл отправить.");
+        try { Process.Start(new ProcessStartInfo("explorer.exe", $"\"{folder}\"") { UseShellExecute = true }); }
+        catch (Exception) { /* папку можно открыть вручную */ }
+    }
+
     // ───────────── Устройства ─────────────
 
     private async Task AddDeviceAsync()
@@ -1174,6 +1243,7 @@ public sealed class MainViewModel : ObservableObject
         var ok = await RunAsync("Выдача доступа…", s => created = s.AddDevice(snap, item.Model, r.Name, r.Kind, r.DownMbps, r.UpMbps));
         if (ok && created != null)
         {
+            RememberInPeople(item.Model, created);
             SelectedDevice = Devices.FirstOrDefault(d => d.Model == created);
             _ui.ShowShare(snap, item.Model, created, ExportFolder);
         }

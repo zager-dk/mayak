@@ -42,6 +42,9 @@ public sealed class InstallOptions
 }
 
 /// <summary>Состояние сервера, прочитанное за одно подключение.</summary>
+/// <summary>Результат выдачи по списку: устройство и было ли оно создано сейчас.</summary>
+public sealed record GrantItem(VpnUser User, VpnDevice Device, bool Created);
+
 public sealed class ServerSnapshot
 {
     public ServerEndpoint Endpoint { get; set; } = new();
@@ -363,6 +366,90 @@ public sealed partial class MayakServer : IDisposable
         Commit(snap);
         Info($"Добавлено устройство «{user.Name} / {name}» ({ip}).");
         return device;
+    }
+
+    /// <summary>
+    /// Выдаёт доступ людям из постоянного списка: находит или создаёт пользователя (по связи PersonId, иначе по имени)
+    /// и недостающие устройства (по TemplateId, иначе по имени и типу). Все новые пиры пишутся одним обновлением конфига.
+    /// </summary>
+    public IReadOnlyList<GrantItem> GrantPeople(ServerSnapshot snap, IEnumerable<Person> people)
+    {
+        var conf = ReadConf();
+        var used = new HashSet<string>(conf.Peers.Select(p => p.Ip ?? "").Concat(snap.Db.AllDevices.Select(d => d.Ip)));
+        if (snap.Db.Probe is { AwgIp: { Length: > 0 } probeIp }) used.Add(probeIp);
+        var result = new List<GrantItem>();
+        bool confChanged = false;
+
+        foreach (var person in people)
+        {
+            var name = person.Name.Trim();
+            if (name.Length == 0) continue;
+            var user = FindUser(snap.Db, person);
+            if (user == null)
+            {
+                user = new VpnUser { Name = name, Note = person.Note, PersonId = person.Id };
+                snap.Db.Users.Add(user);
+                Info($"Создан пользователь «{name}».");
+            }
+            user.PersonId = person.Id;
+
+            foreach (var t in person.Devices)
+            {
+                var existing = FindDevice(user, t);
+                if (existing != null)
+                {
+                    existing.TemplateId = t.Id;
+                    result.Add(new GrantItem(user, existing, false));
+                    continue;
+                }
+                var ip = IpAllocator.Next(snap.Endpoint.SubnetAddress, int.Parse(snap.Endpoint.SubnetCidr), snap.ServerAddress, used);
+                used.Add(ip);
+                var (priv, pub) = Curve25519.GenerateKeyPair();
+                var device = new VpnDevice
+                {
+                    Name = t.Name.Trim().Length == 0 ? t.Kind.Title() : t.Name.Trim(),
+                    Kind = t.Kind,
+                    PrivateKey = priv,
+                    PublicKey = pub,
+                    Ip = ip,
+                    DownMbps = t.DownMbps ?? snap.Db.DefaultDownMbps,
+                    UpMbps = t.UpMbps ?? snap.Db.DefaultUpMbps,
+                    Enabled = true,
+                    TemplateId = t.Id,
+                };
+                if (user.Enabled)
+                {
+                    conf.AddPeer(pub, snap.Endpoint.PresharedKey, ip);
+                    snap.PeersOnServer.Add(pub);
+                    confChanged = true;
+                }
+                user.Devices.Add(device);
+                result.Add(new GrantItem(user, device, true));
+                Info($"Добавлено устройство «{user.Name} / {device.Name}» ({ip}).");
+            }
+        }
+
+        if (confChanged) WriteConfAndSync(conf);
+        Commit(snap);
+        return result;
+    }
+
+    /// <summary>Пользователь сервера, соответствующий человеку из списка.</summary>
+    public static VpnUser? FindUser(MayakDatabase db, Person person)
+    {
+        bool SameName(VpnUser u) => string.Equals(u.Name.Trim(), person.Name.Trim(), StringComparison.CurrentCultureIgnoreCase);
+        return db.Users.FirstOrDefault(u => u.PersonId == person.Id)
+               ?? db.Users.FirstOrDefault(u => u.PersonId == null && SameName(u))
+               ?? db.Users.FirstOrDefault(SameName);
+    }
+
+    /// <summary>Устройство пользователя, соответствующее шаблону из списка.</summary>
+    public static VpnDevice? FindDevice(VpnUser user, PersonDevice t)
+    {
+        bool Same(VpnDevice d) => d.Kind == t.Kind && string.Equals(d.Name.Trim(), t.Name.Trim(), StringComparison.CurrentCultureIgnoreCase);
+        return user.Devices.FirstOrDefault(d => d.TemplateId == t.Id)
+               ?? user.Devices.FirstOrDefault(d => d.TemplateId == null && Same(d))
+               ?? user.Devices.FirstOrDefault(Same);
     }
 
     public void RemoveDevice(ServerSnapshot snap, VpnUser user, VpnDevice device)

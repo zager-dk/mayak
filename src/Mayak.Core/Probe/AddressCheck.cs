@@ -235,7 +235,8 @@ public static class AddressCheck
             r.Verdict = CheckStatus.Ok;
             r.VerdictTitle = "Подходит: сервер доступен напрямую";
             r.VerdictText = "Из вашей сети до адреса есть маршрут. Можно устанавливать VPN, а затем запустить «Проверку» — она покажет, какой протокол проходит (UDP AmneziaWG до установки проверить нельзя)." +
-                            (relays.Count > 0 && usableRelays.Count == 0 ? "\nВход его не видит — каскад с этим сервером работать не будет." : "");
+                            (relays.Count > 0 && usableRelays.Count == 0 && relays.Any(v => v.Failure == null) ? "\nВход его не видит — каскад с этим сервером работать не будет." : "") +
+                            (!localAnyOk ? $"\nНо с компьютера не открылись даже контрольные {ForeignControlHost} и {LocalControlHost} — сеть работает с перебоями или трафик идёт через другой VPN/прокси. Повторите проверку." : "");
         }
         else if (usableRelays.Count > 0)
         {
