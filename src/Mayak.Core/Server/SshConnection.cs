@@ -85,7 +85,7 @@ public sealed class SshConnection : IDisposable
         }
 
         // Убираем временные файлы, оставшиеся от прерванных операций
-        Run("find ~ -maxdepth 1 -name '.mayak_*' -mmin +30 -delete 2>/dev/null", TimeSpan.FromSeconds(20));
+        Run("find ~ -maxdepth 1 -name '.mayak_*' -type f -mmin +30 -delete 2>/dev/null; find ~/.mayak_tmp -type f -mmin +30 -delete 2>/dev/null; true", TimeSpan.FromSeconds(20));
     }
 
     private bool _hostKeyMismatch;
@@ -184,17 +184,27 @@ public sealed class SshConnection : IDisposable
         }
     }
 
-    /// <summary>Загружает файл во временную папку домашнего каталога с правами 600 и возвращает абсолютный путь.</summary>
+    private string? _tempDir;
+
+    /// <summary>
+    /// Загружает текст во временный файл в закрытой папке ~/.mayak_tmp (права 700) и возвращает абсолютный путь.
+    /// Права выставляются командой mkdir, а не через SFTP: так не зависим от особенностей SFTP-сервера.
+    /// </summary>
     public string UploadTemp(string content, string suffix = "")
     {
         var sftp = Sftp;
-        var dir = sftp.WorkingDirectory.TrimEnd('/');
-        var path = $"{dir}/.mayak_{Guid.NewGuid():N}{suffix}";
+        if (_tempDir == null)
+        {
+            var home = sftp.WorkingDirectory.TrimEnd('/');
+            var dir = $"{home}/.mayak_tmp";
+            RunChecked($"mkdir -p {Q(dir)} && chmod 700 {Q(dir)}", "Создание временной папки");
+            _tempDir = dir;
+        }
+        var path = $"{_tempDir}/{Guid.NewGuid():N}{suffix}";
         using (var ms = new MemoryStream(new UTF8Encoding(false).GetBytes(content.Replace("\r\n", "\n"))))
         {
             sftp.UploadFile(ms, path, canOverride: true);
         }
-        sftp.ChangePermissions(path, 600); // SSH.NET ждёт восьмеричные цифры: 600 = rw-------
         return path;
     }
 

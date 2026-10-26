@@ -16,6 +16,8 @@ public partial class MainWindow : Window, IUi
     public MainWindow()
     {
         InitializeComponent();
+        var version = typeof(MainWindow).Assembly.GetName().Version;
+        Title = $"Маяк VPN {version?.ToString(3)}";
         _vm = new MainViewModel(this);
         DataContext = _vm;
         ((INotifyCollectionChanged)_vm.LogLines).CollectionChanged += (_, _) =>
