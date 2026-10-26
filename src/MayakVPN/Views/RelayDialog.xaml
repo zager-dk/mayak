@@ -18,12 +18,8 @@
         <TextBlock x:Name="RelayHostText" Style="{StaticResource Hint}" />
 
         <CheckBox x:Name="ManageCheck" IsChecked="True" Margin="0,14,0,0">
-            <TextBlock TextWrapping="Wrap" Text="Управлять основным сервером через вход (SSH пробрасывается на порт входа) — Маяк будет работать без стороннего VPN" />
+            <TextBlock TextWrapping="Wrap" Text="Маяк тоже подключается к основному серверу через вход (SSH-туннель) — управлять можно без стороннего VPN" />
         </CheckBox>
-        <DockPanel Margin="22,6,0,0">
-            <TextBlock Text="Порт SSH на входе:" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="{StaticResource Muted}" />
-            <TextBox x:Name="SshPortBox" Text="22022" Width="90" HorizontalAlignment="Left" />
-        </DockPanel>
 
         <Border Background="#FFF7E6" BorderBrush="#F3D39A" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,14,0,0">
             <TextBlock TextWrapping="Wrap" Foreground="#5C3B00"

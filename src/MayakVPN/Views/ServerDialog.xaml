@@ -49,6 +49,12 @@
             <PasswordBox x:Name="PassphraseBox" />
         </StackPanel>
 
+        <TextBlock Style="{StaticResource FieldLabel}" Text="Как Маяк подключается к серверу" Margin="0,14,0,4" />
+        <ComboBox x:Name="JumpBox" DisplayMemberPath="Name" SelectedValuePath="Id" />
+        <TextBlock Style="{StaticResource Hint}" Margin="0,4,0,0" TextWrapping="Wrap">
+            Если зарубежный сервер не открывается из вашей сети, выберите сервер, который открывается (например, московский вход): Маяк пройдёт к этому серверу через него по SSH-туннелю. Пользователей это не касается — для них есть «Настроить вход…».
+        </TextBlock>
+
         <TextBlock Style="{StaticResource Hint}" Margin="0,12,0,0">
             Пароли хранятся на этом компьютере в зашифрованном виде (Windows DPAPI). Нужен root или пользователь с sudo без пароля.
         </TextBlock>

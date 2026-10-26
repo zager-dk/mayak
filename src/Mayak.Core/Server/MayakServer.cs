@@ -95,6 +95,7 @@ public sealed partial class MayakServer : IDisposable
     public event Action<string>? Log;
 
     public string? Fingerprint => _ssh.ServerFingerprint;
+    public string? JumpFingerprint => _ssh.JumpFingerprint;
 
     public MayakServer(SshCredentials creds)
     {
@@ -104,7 +105,7 @@ public sealed partial class MayakServer : IDisposable
 
     public void Connect()
     {
-        Info($"Подключение к {_creds.Host}:{_creds.Port} как {_creds.User}…");
+        Info($"Подключение к {_creds.Host}:{_creds.Port} как {_creds.User}" + (_creds.Jump is { } j ? $" через {j.Host}…" : "…"));
         _ssh.Connect();
         Info(_ssh.IsRoot ? "Вход выполнен (root)." : "Вход выполнен (sudo без пароля).");
     }

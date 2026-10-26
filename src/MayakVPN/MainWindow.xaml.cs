@@ -33,9 +33,9 @@ public partial class MainWindow : Window, IUi
 
     // ───────────── IUi ─────────────
 
-    public ServerProfile? EditServer(ServerProfile? existing)
+    public ServerProfile? EditServer(ServerProfile? existing, IEnumerable<ServerProfile> jumpCandidates)
     {
-        var dlg = new ServerDialog(existing) { Owner = this };
+        var dlg = new ServerDialog(existing, jumpCandidates) { Owner = this };
         return dlg.ShowDialog() == true ? dlg.Result : null;
     }
 

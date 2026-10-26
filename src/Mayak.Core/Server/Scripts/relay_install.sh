@@ -4,6 +4,7 @@ SUDO="{{SUDO}}"
 TARGET_HOST="{{TARGET_HOST}}"
 FORWARDS="{{FORWARDS}}"
 OWN_SSH_PORT="{{OWN_SSH_PORT}}"
+CHECK_TCP="{{CHECK_TCP}}"
 
 echo "$LANG" | grep -qE '^(en_US.UTF-8|C.UTF-8|C)$' || export LC_ALL=C
 
@@ -41,7 +42,9 @@ fi
 # Видит ли вход основной сервер (только TCP — UDP так не проверить)
 for f in $FORWARDS; do
   IFS=: read -r proto lport rport <<< "$f"
-  [ "$proto" = tcp ] || continue
+  [ "$proto" = tcp ] && CHECK_TCP="$CHECK_TCP $rport"
+done
+for rport in $(echo $CHECK_TCP | tr ' ' '\n' | sort -un); do
   if timeout 6 bash -c "</dev/tcp/$TARGET/$rport" 2>/dev/null; then
     echo "MAYAK_REACH: tcp $rport ok"
   else

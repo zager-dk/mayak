@@ -19,8 +19,7 @@ public partial class RelayDialog : Window
         RelayBox.ItemsSource = _candidates;
         RelayBox.SelectionChanged += (_, _) => UpdateHost();
         RelayBox.SelectedItem = _candidates.FirstOrDefault(c => c.Id == main.RelayProfileId) ?? _candidates.FirstOrDefault();
-        ManageCheck.IsChecked = main.RelayProfileId == null || main.ManageViaRelay;
-        SshPortBox.Text = main.RelaySshPort.ToString();
+        ManageCheck.IsChecked = main.RelayProfileId == null || main.ManageViaRelay || main.JumpProfileId == main.RelayProfileId;
         UpdateHost();
     }
 
@@ -29,7 +28,7 @@ public partial class RelayDialog : Window
 
     private void AddNew(object sender, RoutedEventArgs e)
     {
-        var dlg = new ServerDialog(null) { Owner = this };
+        var dlg = new ServerDialog(null, Array.Empty<ServerProfile>()) { Owner = this };
         if (dlg.ShowDialog() != true || dlg.Result == null) return;
         _created = dlg.Result;
         if (string.IsNullOrWhiteSpace(_created.Name) || _created.Name == _created.Host)
@@ -45,12 +44,7 @@ public partial class RelayDialog : Window
             MessageBox.Show(this, "Выберите или добавьте входной сервер.", Title, MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
-        if (!int.TryParse(SshPortBox.Text.Trim(), out var port) || port is < 1024 or > 65535 || port == relay.Port)
-        {
-            MessageBox.Show(this, "Порт SSH на входе — число от 1024 до 65535, не совпадающее с SSH самого входа.", Title, MessageBoxButton.OK, MessageBoxImage.Warning);
-            return;
-        }
-        Result = new RelaySetup(relay, relay == _created, ManageCheck.IsChecked == true, port);
+        Result = new RelaySetup(relay, relay == _created, ManageCheck.IsChecked == true);
         DialogResult = true;
     }
 }

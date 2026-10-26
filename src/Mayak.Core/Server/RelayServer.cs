@@ -8,8 +8,12 @@ public sealed class RelayOptions
     public int AwgPort { get; set; }
     public int? XrayPort { get; set; }
     /// <summary>Порт на входе, через который Маяк ходит по SSH к основному серверу (0 — не пробрасывать).</summary>
-    public int SshForwardPort { get; set; } = 22022;
+    /// <remarks>Старый способ управления через вход; теперь Маяк ходит SSH-туннелем (SshCredentials.Jump).</remarks>
+    public int SshForwardPort { get; set; }
     public int TargetSshPort { get; set; } = 22;
+
+    /// <summary>Дополнительные TCP-порты основного сервера, доступность которых проверить с входа (например, SSH).</summary>
+    public List<int> CheckTcp { get; set; } = new();
 
     public string Forwards()
     {
@@ -68,6 +72,7 @@ public sealed class RelayServer : IDisposable
                 ["FORWARDS"] = opt.Forwards(),
                 ["OWN_SSH_PORT"] = _creds.Port.ToString(),
                 ["RELAY_SCRIPT"] = relayScript,
+                ["CHECK_TCP"] = string.Join(" ", opt.CheckTcp),
             };
             var r = _ssh.RunScript(ScriptLibrary.Load("relay_install.sh", vars), TimeSpan.FromMinutes(5));
             if (!r.Output.Contains("MAYAK_OK"))

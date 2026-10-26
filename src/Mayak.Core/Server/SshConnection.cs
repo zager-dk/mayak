@@ -17,6 +17,12 @@ public sealed class SshCredentials
 
     /// <summary>SHA256-отпечаток ключа сервера, сохранённый при первом подключении (TOFU).</summary>
     public string? KnownHostFingerprint { get; set; }
+
+    /// <summary>
+    /// Промежуточный сервер: Маяк подключается к нему, а оттуда SSH-туннелем к этому серверу
+    /// (как ssh -J). Шифрование сквозное — промежуточный сервер видит только зашифрованный поток.
+    /// </summary>
+    public SshCredentials? Jump { get; set; }
 }
 
 public sealed record CommandResult(int ExitCode, string Output, string Error)
@@ -36,20 +42,34 @@ public sealed class SshConnection : IDisposable
     private readonly SshCredentials _creds;
     private SshClient? _ssh;
     private SftpClient? _sftp;
+    private SshClient? _jump;
+    private ForwardedPortLocal? _forward;
+    private string? _forwardError;
+    private string _connectHost;
+    private int _connectPort;
 
     /// <summary>Отпечаток ключа сервера, который увидели при подключении.</summary>
     public string? ServerFingerprint { get; private set; }
+
+    /// <summary>Отпечаток ключа промежуточного сервера (если подключались через него).</summary>
+    public string? JumpFingerprint { get; private set; }
 
     /// <summary>Пусто для root, «sudo -n » для остальных.</summary>
     public string Sudo { get; private set; } = "";
 
     public bool IsRoot { get; private set; }
 
-    public SshConnection(SshCredentials creds) => _creds = creds;
+    public SshConnection(SshCredentials creds)
+    {
+        _creds = creds;
+        _connectHost = creds.Host;
+        _connectPort = creds.Port;
+    }
 
     public void Connect()
     {
-        var info = CreateConnectionInfo();
+        if (_creds.Jump != null) OpenJump(_creds.Jump);
+        var info = CreateConnectionInfo(_creds, _connectHost, _connectPort);
         _ssh = new SshClient(info);
         _ssh.HostKeyReceived += OnHostKey;
         _ssh.KeepAliveInterval = TimeSpan.FromSeconds(20);
@@ -64,6 +84,15 @@ public sealed class SshConnection : IDisposable
         catch (Exception ex) when (_hostKeyMismatch)
         {
             throw new MayakException("Отпечаток ключа сервера изменился. Если вы переустанавливали систему на сервере — нажмите «Сбросить отпечаток» в настройках сервера. Иначе возможна подмена сервера.", ex);
+        }
+        catch (Exception ex) when (_creds.Jump is { } j && ex is not MayakException)
+        {
+            // Канал открывается на промежуточном сервере: ошибка там почти всегда значит, что он не видит этот сервер.
+            throw new MayakException(
+                $"Промежуточный сервер {j.Host} не смог соединиться с {_creds.Host}:{_creds.Port}" +
+                (string.IsNullOrEmpty(_forwardError) ? "." : $" ({_forwardError}).") +
+                $"\n\nПроверьте в консоли промежуточного сервера:\ntimeout 5 bash -c \"</dev/tcp/{_creds.Host}/{_creds.Port}\" && echo OK || echo FAIL\n\n" +
+                "FAIL — IP этого сервера блокируется и из дата-центра промежуточного сервера.", ex);
         }
         catch (System.Net.Sockets.SocketException ex)
         {
@@ -90,9 +119,49 @@ public sealed class SshConnection : IDisposable
 
     private bool _hostKeyMismatch;
 
+    /// <summary>Подключается к промежуточному серверу и открывает локальный порт, ведущий к целевому SSH.</summary>
+    private void OpenJump(SshCredentials j)
+    {
+        bool mismatch = false;
+        _jump = new SshClient(CreateConnectionInfo(j, j.Host, j.Port));
+        _jump.HostKeyReceived += (_, e) =>
+        {
+            var fp = Fingerprint(e.HostKey);
+            JumpFingerprint = fp;
+            e.CanTrust = string.IsNullOrEmpty(j.KnownHostFingerprint) || j.KnownHostFingerprint == fp;
+            mismatch = !e.CanTrust;
+        };
+        _jump.KeepAliveInterval = TimeSpan.FromSeconds(20);
+        try
+        {
+            _jump.Connect();
+        }
+        catch (SshAuthenticationException ex)
+        {
+            throw new MayakException($"Промежуточный сервер {j.Host} не принял логин, пароль или ключ.", ex);
+        }
+        catch (Exception ex) when (mismatch)
+        {
+            throw new MayakException($"Отпечаток ключа промежуточного сервера {j.Host} изменился. Если система на нём переустанавливалась — сбросьте отпечаток в его настройках.", ex);
+        }
+        catch (Exception ex) when (ex is System.Net.Sockets.SocketException or SshOperationTimeoutException or SshConnectionException)
+        {
+            throw new MayakException($"Не удалось подключиться к промежуточному серверу {j.Host}:{j.Port} — {ex.Message}", ex);
+        }
+
+        _forward = new ForwardedPortLocal("127.0.0.1", 0, _creds.Host, (uint)_creds.Port);
+        _forward.Exception += (_, e) => _forwardError = e.Exception.Message;
+        _jump.AddForwardedPort(_forward);
+        _forward.Start();
+        _connectHost = "127.0.0.1";
+        _connectPort = (int)_forward.BoundPort;
+    }
+
+    private static string Fingerprint(byte[] hostKey) => "SHA256:" + Convert.ToBase64String(SHA256.HashData(hostKey)).TrimEnd('=');
+
     private void OnHostKey(object? sender, HostKeyEventArgs e)
     {
-        var fp = "SHA256:" + Convert.ToBase64String(SHA256.HashData(e.HostKey)).TrimEnd('=');
+        var fp = Fingerprint(e.HostKey);
         ServerFingerprint = fp;
         if (string.IsNullOrEmpty(_creds.KnownHostFingerprint) || _creds.KnownHostFingerprint == fp)
         {
@@ -105,44 +174,45 @@ public sealed class SshConnection : IDisposable
         }
     }
 
-    private ConnectionInfo CreateConnectionInfo()
+    private static ConnectionInfo CreateConnectionInfo(SshCredentials c, string host, int port)
     {
         var methods = new List<AuthenticationMethod>();
-        if (!string.IsNullOrWhiteSpace(_creds.PrivateKeyPath))
+        if (!string.IsNullOrWhiteSpace(c.PrivateKeyPath))
         {
-            if (!File.Exists(_creds.PrivateKeyPath))
-                throw new MayakException($"Файл ключа не найден: {_creds.PrivateKeyPath}");
-            var key = string.IsNullOrEmpty(_creds.PrivateKeyPassphrase)
-                ? new PrivateKeyFile(_creds.PrivateKeyPath)
-                : new PrivateKeyFile(_creds.PrivateKeyPath, _creds.PrivateKeyPassphrase);
-            methods.Add(new PrivateKeyAuthenticationMethod(_creds.User, key));
+            if (!File.Exists(c.PrivateKeyPath))
+                throw new MayakException($"Файл ключа не найден: {c.PrivateKeyPath}");
+            var key = string.IsNullOrEmpty(c.PrivateKeyPassphrase)
+                ? new PrivateKeyFile(c.PrivateKeyPath)
+                : new PrivateKeyFile(c.PrivateKeyPath, c.PrivateKeyPassphrase);
+            methods.Add(new PrivateKeyAuthenticationMethod(c.User, key));
         }
-        if (!string.IsNullOrEmpty(_creds.Password))
+        if (!string.IsNullOrEmpty(c.Password))
         {
-            methods.Add(new PasswordAuthenticationMethod(_creds.User, _creds.Password));
-            var kbd = new KeyboardInteractiveAuthenticationMethod(_creds.User);
+            methods.Add(new PasswordAuthenticationMethod(c.User, c.Password));
+            var kbd = new KeyboardInteractiveAuthenticationMethod(c.User);
             kbd.AuthenticationPrompt += (_, args) =>
             {
-                foreach (var prompt in args.Prompts) prompt.Response = _creds.Password;
+                foreach (var prompt in args.Prompts) prompt.Response = c.Password;
             };
             methods.Add(kbd);
         }
         if (methods.Count == 0)
-            throw new MayakException("Укажите пароль или файл SSH-ключа.");
+            throw new MayakException($"Укажите пароль или файл SSH-ключа для {c.Host}.");
 
-        return new ConnectionInfo(_creds.Host, _creds.Port, _creds.User, methods.ToArray())
+        return new ConnectionInfo(host, port, c.User, methods.ToArray())
         {
             Timeout = TimeSpan.FromSeconds(20),
             Encoding = Encoding.UTF8,
         };
     }
 
-    private SshClient Ssh => _ssh is { IsConnected: true } ? _ssh : throw new MayakException("Связь с сервером по SSH потеряна. Нажмите «Обновить» — Маяк подключится заново.");
+    private SshClient Ssh => _ssh is { IsConnected: true } && (_jump == null || _jump.IsConnected) ? _ssh : throw new MayakException("Связь с сервером по SSH потеряна. Нажмите «Обновить» — Маяк подключится заново.");
 
     /// <summary>Жива ли SSH-сессия (быстрая команда; после смены сети TCP-сессия часто «висит»).</summary>
     public bool IsAlive()
     {
         if (_ssh is not { IsConnected: true }) return false;
+        if (_jump is { IsConnected: false }) return false;
         try
         {
             return Run("true", TimeSpan.FromSeconds(8)).Ok;
@@ -187,12 +257,8 @@ public sealed class SshConnection : IDisposable
         {
             if (_sftp is { IsConnected: true }) return _sftp;
             _sftp?.Dispose();
-            _sftp = new SftpClient(CreateConnectionInfo());
-            _sftp.HostKeyReceived += (_, e) =>
-            {
-                var fp = "SHA256:" + Convert.ToBase64String(SHA256.HashData(e.HostKey)).TrimEnd('=');
-                e.CanTrust = fp == ServerFingerprint;
-            };
+            _sftp = new SftpClient(CreateConnectionInfo(_creds, _connectHost, _connectPort));
+            _sftp.HostKeyReceived += (_, e) => e.CanTrust = Fingerprint(e.HostKey) == ServerFingerprint;
             _sftp.Connect();
             return _sftp;
         }
@@ -260,5 +326,8 @@ public sealed class SshConnection : IDisposable
         _sftp?.Dispose();
         try { _ssh?.Disconnect(); } catch { /* ignore */ }
         _ssh?.Dispose();
+        try { _forward?.Stop(); } catch { /* ignore */ }
+        try { _jump?.Disconnect(); } catch { /* ignore */ }
+        _jump?.Dispose();
     }
 }

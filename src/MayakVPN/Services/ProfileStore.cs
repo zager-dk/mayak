@@ -30,6 +30,12 @@ public sealed class ServerProfile
     public bool ManageViaRelay { get; set; }
     public int RelaySshPort { get; set; } = 22022;
 
+    /// <summary>
+    /// Маяк подключается к этому серверу по SSH через другой сервер из списка (SSH-туннель, как ssh -J).
+    /// Нужно, когда зарубежный сервер не открывается из домашней сети.
+    /// </summary>
+    public Guid? JumpProfileId { get; set; }
+
     /// <summary>Для входного сервера: какому основному он служит.</summary>
     public Guid? RelayForProfileId { get; set; }
 
@@ -37,7 +43,10 @@ public sealed class ServerProfile
     public bool IsRelay => Role == "relay";
 
     [JsonIgnore]
-    public string Subtitle => IsRelay ? $"{Host} · вход (каскад)" : RelayHost != null ? $"{Host} · через вход {RelayHost}" : Host;
+    public string Subtitle => IsRelay ? $"{Host} · вход (каскад)"
+        : RelayHost != null ? $"{Host} · через вход {RelayHost}"
+        : JumpProfileId != null ? $"{Host} · Маяк через посредника"
+        : Host;
 
     public override string ToString() => Name;
 

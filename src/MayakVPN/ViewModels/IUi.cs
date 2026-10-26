@@ -8,12 +8,12 @@ public sealed record DeviceEditResult(string Name, DeviceKind Kind, int DownMbps
 
 public sealed record UserEditResult(string Name, string Note);
 
-public sealed record RelaySetup(ServerProfile Relay, bool IsNew, bool ManageViaRelay, int SshPort);
+public sealed record RelaySetup(ServerProfile Relay, bool IsNew, bool ManageViaRelay);
 
 /// <summary>Диалоги, которые открывает главное окно по просьбе модели.</summary>
 public interface IUi
 {
-    ServerProfile? EditServer(ServerProfile? existing);
+    ServerProfile? EditServer(ServerProfile? existing, IEnumerable<ServerProfile> jumpCandidates);
     InstallOptions? AskInstall(bool reinstall, string host);
     XrayInstallOptions? AskXrayInstall(bool reinstall, XrayEndpoint? current);
     RelaySetup? AskRelay(ServerProfile main, IEnumerable<ServerProfile> candidates);

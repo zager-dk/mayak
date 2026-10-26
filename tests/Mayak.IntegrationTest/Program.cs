@@ -184,6 +184,47 @@ Console.WriteLine("Входной сервер (каскад):");
     Check("нельзя занять SSH-порт самого входа", refused);
     relay.Remove();
     Check("вход снят начисто", !File.Exists("/etc/mayak-relay.conf") && !File.Exists("/etc/systemd/system/mayak-relay.service"));
+
+    var unreachable2 = relay.Install(new RelayOptions { TargetHost = "127.0.0.1", AwgPort = 41234, TargetSshPort = 2222, CheckTcp = { 2222, 1 } });
+    Check("вход без проброса SSH проверяет доступность SSH основного", !unreachable2.Contains(2222) && unreachable2.Contains(1), string.Join(",", unreachable2));
+    Check("порт 22022 больше не пробрасывается", !File.ReadAllText("/etc/mayak-relay.conf").Contains("tcp:"));
+    relay.Remove();
+}
+
+Console.WriteLine("SSH через промежуточный сервер:");
+{
+    var jump = new SshCredentials { Host = host, Port = port, User = user, Password = password };
+    using (var viaJump = new MayakServer(new SshCredentials { Host = host, Port = port, User = user, Password = password, Jump = jump }))
+    {
+        viaJump.Connect();
+        var s2 = viaJump.Load();
+        Check("подключение через посредника: данные сервера читаются", s2.Endpoint.Port == snap.Endpoint.Port);
+        Check("отпечатки посредника и сервера запомнены", viaJump.JumpFingerprint != null && viaJump.Fingerprint != null);
+        Check("адрес клиента через посредника не подменяется адресом посредника", viaJump.GetClientAddress() == "");
+        Check("адрес подключения в файлах — настоящий адрес сервера, не 127.0.0.1 туннеля", s2.Endpoint.Host == host);
+        s2.Db.ServerTitle = "Через туннель";
+        viaJump.Save(s2);
+        Check("запись на сервер (SFTP) через посредника", viaJump.Load().Db.ServerTitle == "Через туннель");
+    }
+
+    string? closedErr = null;
+    try
+    {
+        using var bad = new MayakServer(new SshCredentials { Host = "127.0.0.1", Port = 1, User = user, Password = password, Jump = jump });
+        bad.Connect();
+    }
+    catch (MayakException ex) { closedErr = ex.Message; }
+    Check("посредник не видит сервер — понятная ошибка с командой проверки", closedErr?.Contains("не смог соединиться") == true && closedErr.Contains("/dev/tcp/127.0.0.1/1"), closedErr);
+
+    string? authErr = null;
+    try
+    {
+        using var bad = new MayakServer(new SshCredentials { Host = host, Port = port, User = user, Password = password,
+            Jump = new SshCredentials { Host = host, Port = port, User = user, Password = "wrong" } });
+        bad.Connect();
+    }
+    catch (MayakException ex) { authErr = ex.Message; }
+    Check("неверный пароль посредника — ошибка про посредника", authErr?.Contains("Промежуточный сервер") == true, authErr);
 }
 
 Console.WriteLine("Протокол 3.1:");

@@ -24,6 +24,7 @@ public sealed class MainViewModel : ObservableObject
         _ui = ui;
         _settings = ProfileStore.Load();
         Servers = new ObservableCollection<ServerProfile>(_settings.Servers);
+        MigrateProfiles();
 
         AddServerCommand = new RelayCommand(AddServer, () => !IsBusy);
         EditServerCommand = new RelayCommand(EditServer, () => !IsBusy && SelectedServer != null);
@@ -111,10 +112,12 @@ public sealed class MainViewModel : ObservableObject
         get
         {
             var p = SelectedServer;
-            if (p?.RelayProfileId == null) return "Не настроен — пользователи подключаются к серверу напрямую.";
+            if (p == null) return "";
+            var jump = JumpOf(p);
+            var jumpText = jump == null ? "" : $" Маяк подключается к серверу через «{jump.Name}» (SSH-туннель).";
+            if (p.RelayProfileId == null) return "Не настроен — пользователи подключаются к серверу напрямую." + jumpText;
             var relay = Servers.FirstOrDefault(s => s.Id == p.RelayProfileId);
-            return $"Пользователи входят через «{relay?.Name ?? p.RelayHost}» ({p.RelayHost})." +
-                   (p.ManageViaRelay ? $" Маяк управляет сервером тоже через вход (SSH-порт {p.RelaySshPort})." : "");
+            return $"Пользователи входят через «{relay?.Name ?? p.RelayHost}» ({p.RelayHost})." + jumpText;
         }
     }
 
@@ -303,9 +306,38 @@ public sealed class MainViewModel : ObservableObject
 
     // ───────────── Серверы ─────────────
 
+    /// <summary>1.2.0 управлял через вход пробросом порта 22022; теперь — SSH-туннелем через вход.</summary>
+    private void MigrateProfiles()
+    {
+        bool changed = false;
+        foreach (var p in Servers.Where(p => p.ManageViaRelay && p.RelayProfileId != null))
+        {
+            p.JumpProfileId ??= p.RelayProfileId;
+            p.ManageViaRelay = false;
+            changed = true;
+        }
+        foreach (var p in Servers.Where(p => p.JumpProfileId != null && Servers.All(j => j.Id != p.JumpProfileId)))
+        {
+            p.JumpProfileId = null;
+            changed = true;
+        }
+        if (changed) SaveSettingsFile();
+    }
+
+    /// <summary>Данные для SSH с учётом промежуточного сервера.</summary>
+    private SshCredentials CredsFor(ServerProfile profile, bool direct = false)
+    {
+        var c = profile.ToCredentials();
+        if (!direct && JumpOf(profile) is { } jump) c.Jump = jump.ToCredentials();
+        return c;
+    }
+
+    private ServerProfile? JumpOf(ServerProfile profile) =>
+        profile.JumpProfileId is Guid id && id != profile.Id ? Servers.FirstOrDefault(s => s.Id == id) : null;
+
     private void AddServer()
     {
-        var profile = _ui.EditServer(null);
+        var profile = _ui.EditServer(null, Servers.ToList());
         if (profile == null) return;
         Servers.Add(profile);
         _settings.Servers.Add(profile);
@@ -317,7 +349,7 @@ public sealed class MainViewModel : ObservableObject
     {
         var current = SelectedServer;
         if (current == null) return;
-        if (_ui.EditServer(current) == null) return;
+        if (_ui.EditServer(current, Servers.ToList()) == null) return;
         int idx = Servers.IndexOf(current);
         SelectedServer = null;
         Servers.RemoveAt(idx);
@@ -329,9 +361,13 @@ public sealed class MainViewModel : ObservableObject
     private void RemoveServer()
     {
         if (SelectedServer == null) return;
-        if (!_ui.Confirm($"Убрать «{SelectedServer.Name}» из списка?\n\nНа самом сервере ничего не изменится: VPN продолжит работать, пользователи останутся.", "Убрать сервер"))
+        var dependents = Servers.Where(s => s.JumpProfileId == SelectedServer.Id).ToList();
+        var note = dependents.Count == 0 ? "" :
+            $"\n\nЧерез него Маяк подключается к: {string.Join(", ", dependents.Select(d => "«" + d.Name + "»"))} — они станут подключаться напрямую.";
+        if (!_ui.Confirm($"Убрать «{SelectedServer.Name}» из списка?\n\nНа самом сервере ничего не изменится: VPN продолжит работать, пользователи останутся.{note}", "Убрать сервер"))
             return;
         var p = SelectedServer;
+        foreach (var d in dependents) d.JumpProfileId = null;
         SelectedServer = null;
         Servers.Remove(p);
         _settings.Servers.Remove(p);
@@ -395,7 +431,7 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
-    private MayakServer EnsureConnected(ServerProfile profile)
+    private MayakServer EnsureConnected(ServerProfile profile, bool direct = false)
     {
         if (_server != null && _connectedProfileId == profile.Id)
         {
@@ -404,9 +440,10 @@ public sealed class MainViewModel : ObservableObject
             AppendLog("SSH-сессия оборвалась (сменилась сеть?), подключаюсь заново…");
         }
         DisconnectServer();
-        var server = new MayakServer(profile.ToCredentials());
+        var server = new MayakServer(CredsFor(profile, direct));
         server.Log += AppendLog;
         server.Connect();
+        if (!direct && JumpOf(profile) is { } jump) RememberFingerprint(jump, server.JumpFingerprint);
         if (string.IsNullOrEmpty(profile.Fingerprint) && server.Fingerprint != null)
         {
             profile.Fingerprint = server.Fingerprint;
@@ -620,7 +657,7 @@ public sealed class MainViewModel : ObservableObject
         {
             var status = await Task.Run(() =>
             {
-                using var relay = new RelayServer(relayProfile.ToCredentials());
+                using var relay = new RelayServer(CredsFor(relayProfile));
                 relay.Connect();
                 RememberFingerprint(relayProfile, relay.Fingerprint);
                 return relay.GetStatus();
@@ -668,6 +705,14 @@ public sealed class MainViewModel : ObservableObject
         relayProfile.Role = "relay";
         relayProfile.RelayForProfileId = main.Id;
 
+        // Вход раньше служил другому серверу (например, заблокированному) — отвязываем тот.
+        foreach (var old in Servers.Where(s => s.Id != main.Id && s.RelayProfileId == relayProfile.Id))
+        {
+            old.RelayProfileId = null;
+            old.RelayHost = null;
+            AppendLog($"Вход «{relayProfile.Name}» теперь служит «{main.Name}»; у «{old.Name}» каскад отключён в Маяке.");
+        }
+
         IReadOnlyList<int> unreachable = Array.Empty<int>();
         IsBusy = true;
         BusyText = "Настройка входного сервера…";
@@ -675,7 +720,7 @@ public sealed class MainViewModel : ObservableObject
         {
             await Task.Run(() =>
             {
-                using var relay = new RelayServer(relayProfile.ToCredentials());
+                using var relay = new RelayServer(CredsFor(relayProfile));
                 relay.Log += AppendLog;
                 relay.Connect();
                 RememberFingerprint(relayProfile, relay.Fingerprint);
@@ -684,8 +729,9 @@ public sealed class MainViewModel : ObservableObject
                     TargetHost = main.Host.Trim(),
                     AwgPort = snap.Endpoint.Port,
                     XrayPort = snap.Xray?.Port,
-                    SshForwardPort = setup.ManageViaRelay ? setup.SshPort : 0,
+                    SshForwardPort = 0,
                     TargetSshPort = main.Port,
+                    CheckTcp = { main.Port },
                 }, st => Ui(() => BusyText = st + "…"));
             });
         }
@@ -698,8 +744,9 @@ public sealed class MainViewModel : ObservableObject
 
         main.RelayProfileId = relayProfile.Id;
         main.RelayHost = relayProfile.Host.Trim();
-        main.ManageViaRelay = setup.ManageViaRelay && !unreachable.Contains(main.Port);
-        main.RelaySshPort = setup.SshPort;
+        main.ManageViaRelay = false;
+        if (setup.ManageViaRelay && !unreachable.Contains(main.Port)) main.JumpProfileId = relayProfile.Id;
+        else if (main.JumpProfileId == relayProfile.Id) main.JumpProfileId = null;
         SaveSettingsFile();
 
         // Адрес в файлах подключения — адрес входа.
@@ -715,11 +762,10 @@ public sealed class MainViewModel : ObservableObject
                 {
                     s = EnsureConnected(main);
                 }
-                catch when (main.ManageViaRelay)
+                catch when (main.JumpProfileId != null)
                 {
-                    // Через вход не вышло — пробуем напрямую (например, через сторонний VPN).
-                    main.ManageViaRelay = false;
-                    s = EnsureConnected(main);
+                    // Через посредника не вышло — пробуем напрямую (например, через сторонний VPN).
+                    s = EnsureConnected(main, direct: true);
                 }
                 snap.Db.EndpointHost = main.RelayHost!;
                 s.Save(snap);
@@ -772,7 +818,7 @@ public sealed class MainViewModel : ObservableObject
                 }
                 if (relayProfile != null)
                 {
-                    using var relay = new RelayServer(relayProfile.ToCredentials());
+                    using var relay = new RelayServer(CredsFor(relayProfile));
                     relay.Log += AppendLog;
                     relay.Connect();
                     relay.Remove();
@@ -883,6 +929,10 @@ public sealed class MainViewModel : ObservableObject
                 return;
             }
             address = "не определён (SSH недоступен)";
+        }
+        else if (string.IsNullOrEmpty(address) && JumpOf(profile) != null)
+        {
+            address = "не определён (Маяк подключён через посредника)";
         }
 
         CheckClientAddress = address;

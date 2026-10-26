@@ -10,10 +10,18 @@ public partial class ServerDialog : Window
 
     public ServerProfile? Result { get; private set; }
 
-    public ServerDialog(ServerProfile? existing)
+    private sealed record JumpOption(Guid? Id, string Name);
+
+    public ServerDialog(ServerProfile? existing, IEnumerable<ServerProfile> jumpCandidates)
     {
         InitializeComponent();
         _existing = existing;
+        var options = new List<JumpOption> { new(null, "Напрямую") };
+        options.AddRange(jumpCandidates
+            .Where(c => c.Id != existing?.Id && c.JumpProfileId == null)
+            .Select(c => new JumpOption(c.Id, $"Через «{c.Name}» ({c.Host})")));
+        JumpBox.ItemsSource = options;
+        JumpBox.SelectedItem = options.FirstOrDefault(o => o.Id != null && o.Id == existing?.JumpProfileId) ?? options[0];
         if (existing != null)
         {
             Header.Text = "Настройки сервера";
@@ -90,6 +98,7 @@ public partial class ServerDialog : Window
             p.Password = PasswordBox.Password;
         }
         if (_resetFingerprint || hostChanged) p.Fingerprint = null;
+        p.JumpProfileId = (JumpBox.SelectedItem as JumpOption)?.Id;
 
         Result = p;
         DialogResult = true;

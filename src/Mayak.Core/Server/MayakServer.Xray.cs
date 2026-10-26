@@ -276,6 +276,8 @@ public sealed partial class MayakServer
     /// <summary>IP-адрес, с которого Маяк подключился к серверу (как его видит сервер).</summary>
     public string GetClientAddress()
     {
+        // Через промежуточный сервер SSH видит его адрес, а не адрес пользователя.
+        if (_creds.Jump != null) return "";
         var r = _ssh.Run("echo $SSH_CONNECTION").Output.Trim();
         return r.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
     }
