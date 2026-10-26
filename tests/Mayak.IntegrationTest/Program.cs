@@ -163,6 +163,29 @@ var st = server.SelfTestXray(snap, probe);
 Check("самопроверка Xray выполняется и честно сообщает результат (на стенде без настоящего xray — «не прошла»)", !st.Ok && st.Details.Contains("код"), st.Details);
 Check("самопроверка не оставила временный конфиг", !File.Exists(XrayRoot + "/tmp/mayak_selftest.json") && !File.Exists("/tmp/mayak_selftest.json"));
 
+
+Console.WriteLine("Входной сервер (каскад):");
+{
+    using var relay = new RelayServer(new SshCredentials { Host = host, Port = port, User = user, Password = password });
+    relay.Log += m => Console.WriteLine("    · " + m);
+    relay.Connect();
+    var unreachable = relay.Install(new RelayOptions { TargetHost = "127.0.0.1", AwgPort = 41234, XrayPort = 443, SshForwardPort = 22022, TargetSshPort = 2222 });
+    Check("вход установлен, видит SSH основного и сообщает о недоступном 443", !unreachable.Contains(2222) && unreachable.Contains(443), string.Join(",", unreachable));
+    var relayConf = File.ReadAllText("/etc/mayak-relay.conf");
+    Check("настройки входа записаны", relayConf.Contains("TARGET_HOST=\"127.0.0.1\"") && relayConf.Contains("udp:41234:41234") && relayConf.Contains("tcp:22022:2222"));
+    Check("служба systemd создана", File.ReadAllText("/etc/systemd/system/mayak-relay.service").Contains("mayak-relay.sh apply"));
+    var calls = File.ReadAllText("/root/calls.log");
+    Check("правила DNAT применены", calls.Contains("--dport 41234 -j DNAT --to-destination 127.0.0.1:41234") && calls.Contains("--dport 22022 -j DNAT --to-destination 127.0.0.1:2222"));
+    var status = relay.GetStatus();
+    Check("статус входа читается", status.Installed && status.TargetHost == "127.0.0.1" && status.Forwards.Contains("tcp:443:443"));
+    bool refused = false;
+    try { relay.Install(new RelayOptions { TargetHost = "127.0.0.1", AwgPort = 41234, SshForwardPort = 2222, TargetSshPort = 2222 }); }
+    catch (MayakException ex) { refused = ex.Message.Contains("SSH самого входного"); }
+    Check("нельзя занять SSH-порт самого входа", refused);
+    relay.Remove();
+    Check("вход снят начисто", !File.Exists("/etc/mayak-relay.conf") && !File.Exists("/etc/systemd/system/mayak-relay.service"));
+}
+
 Console.WriteLine("Протокол 3.1:");
 server.Install(new InstallOptions { Port = 41235, Version = AwgProtocolVersion.V3 }, reinstall: true);
 snap = server.Load();

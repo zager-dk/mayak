@@ -51,6 +51,12 @@ public partial class MainWindow : Window, IUi
         return dlg.ShowDialog() == true ? dlg.Result : null;
     }
 
+    public RelaySetup? AskRelay(ServerProfile main, IEnumerable<ServerProfile> candidates)
+    {
+        var dlg = new RelayDialog(main, candidates) { Owner = this };
+        return dlg.ShowDialog() == true ? dlg.Result : null;
+    }
+
     public UserEditResult? EditUser(string title, VpnUser? existing)
     {
         var dlg = new UserDialog(title, existing) { Owner = this };

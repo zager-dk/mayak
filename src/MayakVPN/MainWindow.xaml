@@ -73,7 +73,7 @@
                         <DataTemplate>
                             <StackPanel>
                                 <TextBlock Text="{Binding Name}" Foreground="White" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                <TextBlock Text="{Binding Host}" Foreground="#8C9AAE" FontSize="11.5" TextTrimming="CharacterEllipsis" />
+                                <TextBlock Text="{Binding Subtitle}" Foreground="#8C9AAE" FontSize="11.5" TextTrimming="CharacterEllipsis" />
                             </StackPanel>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
@@ -142,6 +142,19 @@
                     </TextBlock>
                     <Button Style="{StaticResource PrimaryButton}" Content="Установить VPN…" Command="{Binding InstallCommand}"
                             HorizontalAlignment="Left" Margin="0,18,0,0" Padding="20,9" />
+                </StackPanel>
+            </Border>
+
+            <!-- Входной сервер -->
+            <Border Grid.Row="2" Style="{StaticResource CardBorder}" Margin="24,8,24,24" Padding="28" VerticalAlignment="Top"
+                    Visibility="{Binding IsRelayProfile, Converter={StaticResource BoolVis}}">
+                <StackPanel MaxWidth="720" HorizontalAlignment="Left">
+                    <TextBlock Style="{StaticResource H2}" Text="Входной сервер каскада" />
+                    <TextBlock Text="{Binding RelayStatusText}" TextWrapping="Wrap" FontSize="13.5" LineHeight="22" />
+                    <TextBlock Style="{StaticResource Hint}" Margin="0,12,0,0">
+                        Этот сервер только пересылает зашифрованный трафик на основной: ключей и пользователей на нём нет. Пересылка переживает перезагрузку (служба mayak-relay). Управление — на вкладке «Сервер» основного сервера.
+                    </TextBlock>
+                    <Button Content="⟳  Проверить" Command="{Binding RefreshCommand}" HorizontalAlignment="Left" Margin="0,16,0,0" />
                 </StackPanel>
             </Border>
 
@@ -310,6 +323,20 @@
                                         </WrapPanel>
                                         <TextBlock Style="{StaticResource Hint}">
                                             Перезапуск занимает несколько секунд: подключения переподнимутся сами. Переустановка меняет ключи сервера — всем придётся выдать файлы заново.
+                                        </TextBlock>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Style="{StaticResource CardBorder}" Margin="0,16,0,0">
+                                    <StackPanel>
+                                        <TextBlock Style="{StaticResource H2}" Text="Вход через другой сервер (каскад)" />
+                                        <TextBlock Text="{Binding RelayText}" TextWrapping="Wrap" />
+                                        <WrapPanel Margin="0,10,0,0">
+                                            <Button Style="{StaticResource PrimaryButton}" Content="Настроить вход…" Command="{Binding SetupRelayCommand}" Margin="0,0,8,8" />
+                                            <Button Style="{StaticResource DangerButton}" Content="Отключить вход" Command="{Binding RemoveRelayCommand}" Margin="0,0,8,8" />
+                                        </WrapPanel>
+                                        <TextBlock Style="{StaticResource Hint}">
+                                            Если IP этого сервера заблокирован у пользователей, они подключаются к входному серверу (например, VPS в Москве), а он пересылает зашифрованный трафик сюда. Помогает и при «белых списках».
                                         </TextBlock>
                                     </StackPanel>
                                 </Border>

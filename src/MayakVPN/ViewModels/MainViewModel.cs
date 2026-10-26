@@ -50,6 +50,8 @@ public sealed class MainViewModel : ObservableObject
         RevokeForeignCommand = new RelayCommand(() => _ = RevokeForeignAsync(), () => !IsBusy && SelectedForeign != null);
         AdoptForeignCommand = new RelayCommand(() => _ = AdoptForeignAsync(), () => !IsBusy && SelectedForeign != null && Users.Count > 0);
 
+        SetupRelayCommand = new RelayCommand(() => _ = SetupRelayAsync(), () => !IsBusy && Snapshot != null);
+        RemoveRelayCommand = new RelayCommand(() => _ = RemoveRelayAsync(), () => !IsBusy && SelectedServer?.RelayProfileId != null);
         InstallXrayCommand = new RelayCommand(() => _ = InstallXrayAsync(), () => !IsBusy && Snapshot != null);
         UninstallXrayCommand = new RelayCommand(() => _ = UninstallXrayAsync(), () => !IsBusy && Snapshot?.Xray != null);
         RunCheckCommand = new RelayCommand(() => _ = RunCheckAsync(), () => !IsBusy && !CheckRunning && Snapshot != null);
@@ -97,8 +99,27 @@ public sealed class MainViewModel : ObservableObject
                 _ = ReloadAsync();
             }
             OnPropertyChanged(nameof(HasServer));
+            OnPropertyChanged(nameof(IsRelayProfile));
+            OnPropertyChanged(nameof(RelayText));
         }
     }
+
+    public bool IsRelayProfile => SelectedServer?.IsRelay == true;
+
+    public string RelayText
+    {
+        get
+        {
+            var p = SelectedServer;
+            if (p?.RelayProfileId == null) return "Не настроен — пользователи подключаются к серверу напрямую.";
+            var relay = Servers.FirstOrDefault(s => s.Id == p.RelayProfileId);
+            return $"Пользователи входят через «{relay?.Name ?? p.RelayHost}» ({p.RelayHost})." +
+                   (p.ManageViaRelay ? $" Маяк управляет сервером тоже через вход (SSH-порт {p.RelaySshPort})." : "");
+        }
+    }
+
+    private string _relayStatusText = "";
+    public string RelayStatusText { get => _relayStatusText; private set => Set(ref _relayStatusText, value); }
 
     public bool HasServer => SelectedServer != null;
 
@@ -150,7 +171,7 @@ public sealed class MainViewModel : ObservableObject
     public bool IsInstalled => State is ServerState.Running or ServerState.Stopped;
     public bool NeedsInstall => State is ServerState.Clean or ServerState.DockerOnly;
 
-    public string StateText => State switch
+    public string StateText => IsRelayProfile ? "Входной сервер (каскад)" : State switch
     {
         ServerState.Running => "Работает",
         ServerState.Stopped => "Остановлен",
@@ -270,6 +291,8 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand ShareDeviceCommand { get; }
     public RelayCommand RevokeForeignCommand { get; }
     public RelayCommand AdoptForeignCommand { get; }
+    public RelayCommand SetupRelayCommand { get; }
+    public RelayCommand RemoveRelayCommand { get; }
     public RelayCommand InstallXrayCommand { get; }
     public RelayCommand UninstallXrayCommand { get; }
     public RelayCommand RunCheckCommand { get; }
@@ -328,6 +351,11 @@ public sealed class MainViewModel : ObservableObject
     {
         if (SelectedServer == null || IsBusy) return;
         var profile = SelectedServer;
+        if (profile.IsRelay)
+        {
+            await ReloadRelayAsync(profile, quiet);
+            return;
+        }
         IsBusy = true;
         BusyText = quiet ? "" : "Чтение данных с сервера…";
         try
@@ -527,6 +555,8 @@ public sealed class MainViewModel : ObservableObject
         {
             var ports = $"UDP {opt.Port} (AmneziaWG)" + (opt.InstallXray && xrayError == null ? $" и TCP {opt.Xray.Port} (Xray)" : "");
             var xrayNote = xrayError == null ? "" : $"\n\nXray установить не удалось: {xrayError}\nAmneziaWG работает; Xray можно поставить позже на вкладке «Сервер».";
+            if (SelectedServer?.RelayProfileId != null)
+                xrayNote += "\n\nНа этом сервере был настроен вход (каскад): порты изменились — нажмите «Настроить вход…» ещё раз.";
             _ui.Info($"VPN установлен.\n\nПорты: {ports}. Если у хостинга есть внешний файрвол (панель управления), откройте в нём эти порты.{xrayNote}\n\nТеперь добавьте пользователей и их устройства.");
         }
     }
@@ -578,6 +608,207 @@ public sealed class MainViewModel : ObservableObject
         if (snap == null) return;
         if (!_ui.Confirm("Удалить Xray с сервера? AmneziaWG продолжит работать.", "Удаление Xray", danger: true)) return;
         await RunAsync("Удаление Xray…", s => s.UninstallXray(snap), reload: true);
+    }
+
+    // ───────────── Вход (каскад) ─────────────
+
+    private async Task ReloadRelayAsync(ServerProfile relayProfile, bool quiet)
+    {
+        IsBusy = true;
+        BusyText = quiet ? "" : "Проверка входного сервера…";
+        try
+        {
+            var status = await Task.Run(() =>
+            {
+                using var relay = new RelayServer(relayProfile.ToCredentials());
+                relay.Connect();
+                RememberFingerprint(relayProfile, relay.Fingerprint);
+                return relay.GetStatus();
+            });
+            var main = Servers.FirstOrDefault(p => p.Id == relayProfile.RelayForProfileId);
+            RelayStatusText = !status.Installed
+                ? "Пересылка не настроена. Откройте основной сервер → вкладка «Сервер» → «Настроить вход…»."
+                : $"Пересылает на {status.TargetHost}{(main != null ? $" («{main.Name}»)" : "")}.\n" +
+                  $"Порты: {status.Forwards.Replace(" ", ", ")}.\n" +
+                  $"Служба: {(status.ServiceActive ? "работает" : "не запущена")}, правил пересылки: {status.RuleCount}.";
+            StatusText = $"Обновлено {DateTime.Now:HH:mm:ss}";
+        }
+        catch (Exception ex)
+        {
+            RelayStatusText = "Нет связи со входным сервером: " + FirstLine(ex.Message);
+            if (!quiet) ShowError(ex);
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private void RememberFingerprint(ServerProfile profile, string? fingerprint)
+    {
+        if (!string.IsNullOrEmpty(profile.Fingerprint) || fingerprint == null) return;
+        profile.Fingerprint = fingerprint;
+        Ui(SaveSettingsFile);
+    }
+
+    private async Task SetupRelayAsync()
+    {
+        var main = SelectedServer;
+        var snap = Snapshot;
+        if (main == null || snap == null) return;
+        var setup = _ui.AskRelay(main, Servers.Where(p => p.Id != main.Id && p.RelayProfileId == null));
+        if (setup == null) return;
+
+        var relayProfile = setup.Relay;
+        if (setup.IsNew)
+        {
+            Servers.Add(relayProfile);
+            SaveSettingsFile();
+        }
+        relayProfile.Role = "relay";
+        relayProfile.RelayForProfileId = main.Id;
+
+        IReadOnlyList<int> unreachable = Array.Empty<int>();
+        IsBusy = true;
+        BusyText = "Настройка входного сервера…";
+        try
+        {
+            await Task.Run(() =>
+            {
+                using var relay = new RelayServer(relayProfile.ToCredentials());
+                relay.Log += AppendLog;
+                relay.Connect();
+                RememberFingerprint(relayProfile, relay.Fingerprint);
+                unreachable = relay.Install(new RelayOptions
+                {
+                    TargetHost = main.Host.Trim(),
+                    AwgPort = snap.Endpoint.Port,
+                    XrayPort = snap.Xray?.Port,
+                    SshForwardPort = setup.ManageViaRelay ? setup.SshPort : 0,
+                    TargetSshPort = main.Port,
+                }, st => Ui(() => BusyText = st + "…"));
+            });
+        }
+        catch (Exception ex)
+        {
+            IsBusy = false;
+            ShowError(ex);
+            return;
+        }
+
+        main.RelayProfileId = relayProfile.Id;
+        main.RelayHost = relayProfile.Host.Trim();
+        main.ManageViaRelay = setup.ManageViaRelay && !unreachable.Contains(main.Port);
+        main.RelaySshPort = setup.SshPort;
+        SaveSettingsFile();
+
+        // Адрес в файлах подключения — адрес входа.
+        string? saveError = null;
+        BusyText = "Сохранение адреса входа на основном сервере…";
+        try
+        {
+            await Task.Run(() =>
+            {
+                DisconnectServer();
+                MayakServer s;
+                try
+                {
+                    s = EnsureConnected(main);
+                }
+                catch when (main.ManageViaRelay)
+                {
+                    // Через вход не вышло — пробуем напрямую (например, через сторонний VPN).
+                    main.ManageViaRelay = false;
+                    s = EnsureConnected(main);
+                }
+                snap.Db.EndpointHost = main.RelayHost!;
+                s.Save(snap);
+            });
+        }
+        catch (Exception ex)
+        {
+            saveError = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+        SaveSettingsFile();
+        OnPropertyChanged(nameof(RelayText));
+        RefreshServerItem(main);
+        await ReloadAsync(quiet: true);
+
+        var msg = $"Вход «{relayProfile.Name}» настроен: пользователи подключаются к {main.RelayHost}, трафик идёт на {main.Host}.";
+        if (unreachable.Count > 0)
+            msg += $"\n\nВНИМАНИЕ: с входного сервера недоступны TCP-порты основного ({string.Join(", ", unreachable)}). " +
+                   "Похоже, IP основного сервера блокируется и в дата-центре входа — тогда каскад не поможет, нужен другой основной сервер.";
+        if (saveError != null)
+            msg += $"\n\nНе удалось записать адрес входа на основной сервер: {saveError}\nВключите сторонний VPN и нажмите «Настроить вход…» ещё раз.";
+        else
+            msg += "\n\nТеперь выдайте пользователям файлы заново — в них адрес входа. Затем запустите «Проверку» без стороннего VPN.";
+        _ui.Info(msg);
+    }
+
+    private async Task RemoveRelayAsync()
+    {
+        var main = SelectedServer;
+        var snap = Snapshot;
+        if (main?.RelayProfileId == null) return;
+        if (!_ui.Confirm("Отключить вход? Пользователи снова будут подключаться к основному серверу напрямую — файлы придётся выдать заново.", "Отключение входа", danger: true))
+            return;
+        var relayProfile = Servers.FirstOrDefault(p => p.Id == main.RelayProfileId);
+        IsBusy = true;
+        BusyText = "Отключение входа…";
+        string? error = null;
+        try
+        {
+            await Task.Run(() =>
+            {
+                if (snap != null)
+                {
+                    var s = EnsureConnected(main);
+                    snap.Db.EndpointHost = "";
+                    s.Save(snap);
+                }
+                if (relayProfile != null)
+                {
+                    using var relay = new RelayServer(relayProfile.ToCredentials());
+                    relay.Log += AppendLog;
+                    relay.Connect();
+                    relay.Remove();
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+        main.RelayProfileId = null;
+        main.RelayHost = null;
+        main.ManageViaRelay = false;
+        if (relayProfile != null) relayProfile.RelayForProfileId = null;
+        DisconnectServer();
+        SaveSettingsFile();
+        OnPropertyChanged(nameof(RelayText));
+        RefreshServerItem(main);
+        if (error != null) _ui.Error("Вход отключён в Маяке, но не всё удалось на серверах: " + error);
+        await ReloadAsync(quiet: true);
+    }
+
+    /// <summary>Перерисовать подпись сервера в списке (ServerProfile не уведомляет об изменениях).</summary>
+    private void RefreshServerItem(ServerProfile p)
+    {
+        int idx = Servers.IndexOf(p);
+        if (idx < 0) return;
+        _selectedServer = null;
+        Servers.RemoveAt(idx);
+        Servers.Insert(idx, p);
+        _selectedServer = p;
+        OnPropertyChanged(nameof(SelectedServer));
     }
 
     // ───────────── Проверка протоколов ─────────────
@@ -665,7 +896,7 @@ public sealed class MainViewModel : ObservableObject
             var probeId = probe!;
             var report = await Task.Run(() => ProtocolCheck.RunAsync(snap, probeId, address,
                 (p, ct) => XrayBinary.EnsureAsync(CheckHistoryStore.ToolsFolder, p, ct), progress, _checkCts.Token,
-                profile.Port, selfTest));
+                RelayReachPort(profile), selfTest));
             report.NetworkLabel = CheckNetworkLabel.Trim();
             foreach (var line in report.Lines) CheckLines.Add(new CheckLineItem(line));
             CheckRecommendation = report.Recommendation;
@@ -689,6 +920,10 @@ public sealed class MainViewModel : ObservableObject
             _checkCts = null;
         }
     }
+
+    /// <summary>Для «Связи с сервером»: при каскаде проверяем SSH-порт входа (его адрес стоит в конфигах).</summary>
+    private int RelayReachPort(ServerProfile profile) =>
+        profile.RelayProfileId is Guid id && Servers.FirstOrDefault(p => p.Id == id) is { } relay ? relay.Port : profile.Port;
 
     private void LoadCheckHistory()
     {

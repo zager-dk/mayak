@@ -8,12 +8,15 @@ public sealed record DeviceEditResult(string Name, DeviceKind Kind, int DownMbps
 
 public sealed record UserEditResult(string Name, string Note);
 
+public sealed record RelaySetup(ServerProfile Relay, bool IsNew, bool ManageViaRelay, int SshPort);
+
 /// <summary>Диалоги, которые открывает главное окно по просьбе модели.</summary>
 public interface IUi
 {
     ServerProfile? EditServer(ServerProfile? existing);
     InstallOptions? AskInstall(bool reinstall, string host);
     XrayInstallOptions? AskXrayInstall(bool reinstall, XrayEndpoint? current);
+    RelaySetup? AskRelay(ServerProfile main, IEnumerable<ServerProfile> candidates);
     UserEditResult? EditUser(string title, VpnUser? existing);
     DeviceEditResult? EditDevice(string title, VpnDevice? existing, string userName, int defaultDown, int defaultUp);
     void ShowShare(ServerSnapshot snap, VpnUser user, VpnDevice device, string exportFolder);

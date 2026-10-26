@@ -20,6 +20,25 @@ public sealed class ServerProfile
     public string? EncryptedPassphrase { get; set; }
     public string? Fingerprint { get; set; }
 
+    /// <summary>"main" — VPN-сервер, "relay" — входной сервер каскада.</summary>
+    public string Role { get; set; } = "main";
+
+    /// <summary>Для основного сервера: входной сервер (каскад).</summary>
+    public Guid? RelayProfileId { get; set; }
+    public string? RelayHost { get; set; }
+    /// <summary>Управлять основным сервером по SSH через вход (порт RelaySshPort на входе).</summary>
+    public bool ManageViaRelay { get; set; }
+    public int RelaySshPort { get; set; } = 22022;
+
+    /// <summary>Для входного сервера: какому основному он служит.</summary>
+    public Guid? RelayForProfileId { get; set; }
+
+    [JsonIgnore]
+    public bool IsRelay => Role == "relay";
+
+    [JsonIgnore]
+    public string Subtitle => IsRelay ? $"{Host} · вход (каскад)" : RelayHost != null ? $"{Host} · через вход {RelayHost}" : Host;
+
     public override string ToString() => Name;
 
     [JsonIgnore]
@@ -38,8 +57,8 @@ public sealed class ServerProfile
 
     public SshCredentials ToCredentials() => new()
     {
-        Host = Host.Trim(),
-        Port = Port,
+        Host = ManageViaRelay && !string.IsNullOrEmpty(RelayHost) ? RelayHost.Trim() : Host.Trim(),
+        Port = ManageViaRelay && !string.IsNullOrEmpty(RelayHost) ? RelaySshPort : Port,
         User = User.Trim(),
         Password = Password,
         PrivateKeyPath = string.IsNullOrWhiteSpace(KeyPath) ? null : KeyPath,
