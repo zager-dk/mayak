@@ -28,9 +28,27 @@ public sealed class CheckReport
 public static class ProtocolCheck
 {
     public static async Task<CheckReport> RunAsync(ServerSnapshot snap, ProbeIdentity probe, string clientAddress,
-        Func<IProgress<string>?, CancellationToken, Task<string>>? ensureXray, IProgress<string>? progress, CancellationToken ct)
+        Func<IProgress<string>?, CancellationToken, Task<string>>? ensureXray, IProgress<string>? progress, CancellationToken ct,
+        int sshPort = 22, XraySelfTestResult? xraySelfTest = null)
     {
         var report = new CheckReport { ServerHost = snap.Endpoint.Host, ClientAddress = clientAddress };
+
+        // ── Доступен ли сам IP сервера (TCP до SSH-порта)
+        progress?.Report("Связь с сервером…");
+        var reach = await TcpReachAsync(snap.Endpoint.Host, sshPort, ct);
+        report.Lines.Add(new CheckLine
+        {
+            Protocol = "Связь с сервером",
+            Status = reach.Ok ? (reach.Ms < 3 ? CheckStatus.Warn : CheckStatus.Ok) : CheckStatus.Fail,
+            Summary = reach.Ok
+                ? (reach.Ms < 3 ? "Соединение перехвачено локальным VPN/прокси" : $"IP доступен · {reach.Ms:0} мс")
+                : "IP сервера недоступен из этой сети",
+            Details = reach.Ok
+                ? (reach.Ms < 3
+                    ? $"TCP-соединение до {snap.Endpoint.Host} за {reach.Ms:0.#} мс — так быстро бывает, только если его перехватывает программа на этом компьютере (Browsec и т. п.). Результаты ниже могут быть недостоверны."
+                    : $"TCP до {snap.Endpoint.Host}:{sshPort} за {reach.Ms:0} мс.")
+                : $"TCP до {snap.Endpoint.Host}:{sshPort} не устанавливается ({reach.Error}). Если и протоколы ниже не работают — адрес сервера, вероятно, заблокирован целиком: нужен новый IP или вход через другой сервер.",
+        });
 
         // ── AmneziaWG
         var awg = await AwgProbe.RunAsync(new AwgProbeSettings
@@ -76,7 +94,7 @@ public static class ProtocolCheck
             else
             {
                 var x = await XrayProbe.RunAsync(exe, snap.Endpoint.Host, snap.Xray, probe.XrayId, progress, ct);
-                report.Lines.Add(Describe(x, snap.Xray));
+                report.Lines.Add(Describe(x, snap.Xray, xraySelfTest));
             }
         }
 
@@ -131,10 +149,17 @@ public static class ProtocolCheck
         return line;
     }
 
-    public static CheckLine Describe(XrayProbeResult r, XrayEndpoint ep)
+    public static CheckLine Describe(XrayProbeResult r, XrayEndpoint ep, XraySelfTestResult? selfTest = null)
     {
         var line = new CheckLine { Protocol = ep.Title };
         var details = new List<string> { $"Маскировка под {ep.Sni}, TCP-порт {ep.Port}." };
+        if (selfTest != null) details.Add(selfTest.Details);
+        bool intercepted = r.TcpOk && r.TcpMs < 3;
+        bool realCert = r.Error?.Contains("received real certificate", StringComparison.OrdinalIgnoreCase) == true;
+        if (intercepted)
+            details.Add("TCP-соединение установилось мгновенно — его перехватил локальный VPN/прокси, до вашего сервера проверка не дошла.");
+        if (realCert)
+            details.Add($"Xray получил настоящий сертификат {ep.Sni}: соединение попало не на ваш сервер, а на сам сайт — так бывает, когда VPN/прокси на компьютере перенаправляет трафик по имени сайта, или когда ключи Reality не совпадают.");
         if (r.TcpOk) details.Add($"TCP-соединение: {r.TcpMs:0} мс.");
         if (r.ConnectOk) details.Add($"Соединение через Reality: {r.ConnectMs:0} мс.");
         if (r.DownloadedBytes > 0) details.Add($"Скачано {r.DownloadedBytes / 1024 / 1024.0:0.0} МБ, скорость {r.Mbps:0.#} Мбит/с.");
@@ -144,6 +169,16 @@ public static class ProtocolCheck
         {
             line.Status = CheckStatus.Fail;
             line.Summary = "Порт недоступен";
+        }
+        else if (selfTest is { Ok: false })
+        {
+            line.Status = CheckStatus.Fail;
+            line.Summary = "Ошибка настройки Xray на сервере";
+        }
+        else if (!r.ConnectOk && intercepted)
+        {
+            line.Status = CheckStatus.Skipped;
+            line.Summary = "Не проверено: мешает локальный VPN";
         }
         else if (!r.ConnectOk)
         {
@@ -170,8 +205,30 @@ public static class ProtocolCheck
         return line;
     }
 
+    private static async Task<(bool Ok, double Ms, string Error)> TcpReachAsync(string host, int port, CancellationToken ct)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            using var tcp = new System.Net.Sockets.TcpClient();
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(7));
+            await tcp.ConnectAsync(host, port, cts.Token);
+            return (true, sw.Elapsed.TotalMilliseconds, "");
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return (false, 0, "нет ответа 7 с");
+        }
+        catch (System.Net.Sockets.SocketException ex)
+        {
+            return (false, 0, ex.Message);
+        }
+    }
+
     private static string Recommend(List<CheckLine> lines)
     {
+        lines = lines.Where(l => l.Protocol != "Связь с сервером").ToList();
         var working = lines.Where(l => l.Status == CheckStatus.Ok).Select(l => l.Protocol).ToList();
         var partly = lines.Where(l => l.Status == CheckStatus.Warn).Select(l => l.Protocol).ToList();
         if (working.Count == lines.Count(l => l.Status != CheckStatus.Skipped) && working.Count > 0)

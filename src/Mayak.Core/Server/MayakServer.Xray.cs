@@ -4,6 +4,9 @@ using Mayak.Core.Xray;
 
 namespace Mayak.Core.Server;
 
+/// <summary>Итог самопроверки Xray на самом сервере.</summary>
+public sealed record XraySelfTestResult(bool Ok, string Details);
+
 public sealed class XrayInstallOptions
 {
     public int Port { get; set; } = XrayDefaults.DefaultPort;
@@ -244,6 +247,30 @@ public sealed partial class MayakServer
         if (changed) WriteDatabaseFile(db);
         if (snap.Xray != null) SyncXrayClients(snap);
         return db.Probe;
+    }
+
+    /// <summary>
+    /// Запускает xray-клиент внутри контейнера, подключается им к серверу на 127.0.0.1 (минуя сеть)
+    /// и выходит через него в интернет. Отвечает на вопрос «конфигурация рабочая?» независимо от блокировок.
+    /// </summary>
+    public XraySelfTestResult SelfTestXray(ServerSnapshot snap, ProbeIdentity probe)
+    {
+        if (snap.Xray == null || string.IsNullOrEmpty(probe.XrayId))
+            return new XraySelfTestResult(false, "Xray не установлен.");
+        const string cfg = "/tmp/mayak_selftest.json";
+        WriteContainerFile(cfg, XrayConfig.BuildClientJson("127.0.0.1", snap.Xray, probe.XrayId, 10899), "600", XrayContainer);
+        var script =
+            $"xray run -c {cfg} >/tmp/mayak_selftest.log 2>&1 & P=$!; sleep 2; " +
+            "C=$(curl -s -o /dev/null -w '%{http_code}' --max-time 12 -x socks5h://127.0.0.1:10899 https://www.google.com/generate_204); " +
+            $"kill $P 2>/dev/null; echo MAYAK_SELFTEST=$C; tail -n 4 /tmp/mayak_selftest.log; rm -f {cfg}";
+        var r = ExecContainer(script, TimeSpan.FromSeconds(45), XrayContainer);
+        var line = r.Output.Split('\n').FirstOrDefault(l => l.StartsWith("MAYAK_SELFTEST=")) ?? "";
+        var code = line.Replace("MAYAK_SELFTEST=", "").Trim();
+        bool ok = code is "204" or "200";
+        var log = string.Join(" ", r.Output.Split('\n').Where(l => !l.StartsWith("MAYAK_SELFTEST=") && l.Trim().Length > 0)).Trim();
+        return new XraySelfTestResult(ok, ok
+            ? "Самопроверка на сервере: Xray принимает подключение и выпускает в интернет — конфигурация рабочая."
+            : $"Самопроверка на сервере не прошла (код {(code.Length == 0 ? "нет ответа" : code)}). {log}".Trim());
     }
 
     /// <summary>IP-адрес, с которого Маяк подключился к серверу (как его видит сервер).</summary>

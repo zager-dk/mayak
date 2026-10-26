@@ -111,6 +111,9 @@ public sealed partial class MayakServer : IDisposable
 
     private string S => _ssh.Sudo;
 
+    /// <summary>SSH-сессия ещё работает.</summary>
+    public bool IsAlive() => _ssh.IsAlive();
+
     private void Info(string msg) => Log?.Invoke(msg);
 
     // ───────────────────────────── Состояние ─────────────────────────────

@@ -230,6 +230,20 @@ Console.WriteLine("Xray:");
     Check("vpn:// без Xray — один протокол", noXray["containers"]!.AsArray().Count == 1);
 }
 
+
+Console.WriteLine("Вердикты проверки:");
+{
+    var ep = new XrayEndpoint { Port = 443, Sni = "www.googletagmanager.com" };
+    var intercepted = ProtocolCheck.Describe(new XrayProbeResult { TcpOk = true, TcpMs = 2, Error = "REALITY: received real certificate (potential MITM or redirection)" }, ep);
+    Check("перехват локальным VPN → «не проверено», с объяснением", intercepted.Status == CheckStatus.Skipped && intercepted.Details.Contains("перехватил") && intercepted.Details.Contains("настоящий сертификат"));
+    var broken = ProtocolCheck.Describe(new XrayProbeResult { TcpOk = true, TcpMs = 40 }, ep, new XraySelfTestResult(false, "код 000"));
+    Check("неудачная самопроверка → ошибка настройки", broken.Status == CheckStatus.Fail && broken.Summary.Contains("настройки"));
+    var blocked = ProtocolCheck.Describe(new XrayProbeResult { TcpOk = true, TcpMs = 45 }, ep, new XraySelfTestResult(true, "ок"));
+    Check("самопроверка ок, снаружи нет → «не подключается»", blocked.Status == CheckStatus.Fail && blocked.Summary == "Не подключается");
+    var good = ProtocolCheck.Describe(new XrayProbeResult { TcpOk = true, TcpMs = 45, ConnectOk = true, DownloadedBytes = 30_000_000, Mbps = 80 }, ep);
+    Check("всё хорошо → работает со скоростью", good.Status == CheckStatus.Ok && good.Summary.Contains("80"));
+}
+
 Console.WriteLine("Скрипты в сборке:");
 foreach (var s in new[] { "install_docker.sh", "prepare_host.sh", "Dockerfile", "start.sh", "mayak_tc.sh", "xray.Dockerfile", "xray_start.sh", "xray_configure.sh" })
 {

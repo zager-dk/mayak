@@ -159,6 +159,9 @@ Check("служебная учётка не попала в clientsTable и ли
 var probe2 = server.EnsureProbe(snap);
 Check("повторный вызов не плодит учётки", probe2.AwgPublicKey == probe.AwgPublicKey && probe2.XrayId == probe.XrayId);
 Check("адрес клиента виден сервером", server.GetClientAddress() == "127.0.0.1");
+var st = server.SelfTestXray(snap, probe);
+Check("самопроверка Xray выполняется и честно сообщает результат (на стенде без настоящего xray — «не прошла»)", !st.Ok && st.Details.Contains("код"), st.Details);
+Check("самопроверка не оставила временный конфиг", !File.Exists(XrayRoot + "/tmp/mayak_selftest.json") && !File.Exists("/tmp/mayak_selftest.json"));
 
 Console.WriteLine("Протокол 3.1:");
 server.Install(new InstallOptions { Port = 41235, Version = AwgProtocolVersion.V3 }, reinstall: true);

@@ -137,7 +137,21 @@ public sealed class SshConnection : IDisposable
         };
     }
 
-    private SshClient Ssh => _ssh is { IsConnected: true } ? _ssh : throw new MayakException("Нет подключения к серверу.");
+    private SshClient Ssh => _ssh is { IsConnected: true } ? _ssh : throw new MayakException("Связь с сервером по SSH потеряна. Нажмите «Обновить» — Маяк подключится заново.");
+
+    /// <summary>Жива ли SSH-сессия (быстрая команда; после смены сети TCP-сессия часто «висит»).</summary>
+    public bool IsAlive()
+    {
+        if (_ssh is not { IsConnected: true }) return false;
+        try
+        {
+            return Run("true", TimeSpan.FromSeconds(8)).Ok;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
 
     /// <summary>Выполняет команду. Код возврата, stdout, stderr.</summary>
     public CommandResult Run(string command, TimeSpan? timeout = null)

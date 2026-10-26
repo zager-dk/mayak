@@ -349,9 +349,17 @@ public sealed class MainViewModel : ObservableObject
         catch (Exception ex)
         {
             DisconnectServer();
-            State = null;
-            if (!quiet) ShowError(ex);
-            StatusText = "Нет связи с сервером: " + FirstLine(ex.Message);
+            if (Snapshot == null)
+            {
+                State = null;
+                if (!quiet) ShowError(ex);
+            }
+            else
+            {
+                // Данные остаются на экране: «Проверка» работает и без SSH.
+                AppendLog("Нет связи с сервером по SSH: " + FirstLine(ex.Message));
+            }
+            StatusText = "Нет связи с сервером по SSH (" + FirstLine(ex.Message) + "). Показаны последние данные; «Проверка» работает и без SSH.";
         }
         finally
         {
@@ -361,7 +369,12 @@ public sealed class MainViewModel : ObservableObject
 
     private MayakServer EnsureConnected(ServerProfile profile)
     {
-        if (_server != null && _connectedProfileId == profile.Id) return _server;
+        if (_server != null && _connectedProfileId == profile.Id)
+        {
+            // После смены сети (включили/выключили VPN) старая сессия мертва — переподключаемся.
+            if (_server.IsAlive()) return _server;
+            AppendLog("SSH-сессия оборвалась (сменилась сеть?), подключаюсь заново…");
+        }
         DisconnectServer();
         var server = new MayakServer(profile.ToCredentials());
         server.Log += AppendLog;
@@ -599,14 +612,47 @@ public sealed class MainViewModel : ObservableObject
         var profile = SelectedServer;
         if (snap == null || profile == null) return;
 
-        ProbeIdentity? probe = null;
+        ProbeIdentity? probe = snap.Db.Probe;
         string address = "";
-        var prepared = await RunAsync("Подготовка проверки на сервере…", s =>
+        XraySelfTestResult? selfTest = null;
+        bool sshOk = false;
+        IsBusy = true;
+        BusyText = "Подготовка проверки на сервере…";
+        try
         {
-            probe = s.EnsureProbe(snap);
-            address = s.GetClientAddress();
-        });
-        if (!prepared || probe == null) return;
+            await Task.Run(() =>
+            {
+                var s = EnsureConnected(profile);
+                probe = s.EnsureProbe(snap);
+                address = s.GetClientAddress();
+                if (snap.Xray != null)
+                {
+                    Ui(() => BusyText = "Самопроверка Xray на сервере…");
+                    try { selfTest = s.SelfTestXray(snap, probe); }
+                    catch (Exception ex) { selfTest = new XraySelfTestResult(false, "Самопроверка на сервере не выполнена: " + ex.Message); }
+                }
+            });
+            sshOk = true;
+        }
+        catch (Exception ex)
+        {
+            DisconnectServer();
+            AppendLog("SSH к серверу недоступен из этой сети: " + ex.Message);
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+
+        if (!sshOk)
+        {
+            if (probe == null || string.IsNullOrEmpty(probe.AwgPrivateKey))
+            {
+                _ui.Error("Нет связи с сервером по SSH, а проверочная учётка ещё не создана.\n\nПодключитесь к серверу один раз (например, через другой VPN) и запустите проверку — после этого её можно запускать и без SSH, из любой сети, не перезапуская Маяк.");
+                return;
+            }
+            address = "не определён (SSH недоступен)";
+        }
 
         CheckClientAddress = address;
         CheckLines.Clear();
@@ -616,8 +662,10 @@ public sealed class MainViewModel : ObservableObject
         var progress = new Progress<string>(m => CheckProgress = m);
         try
         {
-            var report = await Task.Run(() => ProtocolCheck.RunAsync(snap, probe, address,
-                (p, ct) => XrayBinary.EnsureAsync(CheckHistoryStore.ToolsFolder, p, ct), progress, _checkCts.Token));
+            var probeId = probe!;
+            var report = await Task.Run(() => ProtocolCheck.RunAsync(snap, probeId, address,
+                (p, ct) => XrayBinary.EnsureAsync(CheckHistoryStore.ToolsFolder, p, ct), progress, _checkCts.Token,
+                profile.Port, selfTest));
             report.NetworkLabel = CheckNetworkLabel.Trim();
             foreach (var line in report.Lines) CheckLines.Add(new CheckLineItem(line));
             CheckRecommendation = report.Recommendation;
