@@ -246,6 +246,17 @@ Console.WriteLine("Входной сервер (каскад):");
     Check("контрольные адреса проверены с входа", seen.ForeignControl != null && seen.LocalControl != null);
 }
 
+Console.WriteLine("Проверка адреса с компьютера:");
+{
+    var byName = await AddressCheck.TcpAsync("localhost", port, CancellationToken.None);
+    var byIp = await AddressCheck.TcpAsync("127.0.0.1", port, CancellationToken.None);
+    var closed = await AddressCheck.TcpAsync("localhost", 1, CancellationToken.None);
+    var noName = await AddressCheck.TcpAsync("nonexistent.invalid", 443, CancellationToken.None);
+    Check("по имени и по IP одинаково: открыт", byName.Outcome == TcpOutcome.Open && byIp.Outcome == TcpOutcome.Open, $"{byName.Describe()} / {byIp.Describe()}");
+    Check("закрытый порт по имени — «закрыт, сервер ответил»", closed.Outcome == TcpOutcome.Refused, closed.Describe());
+    Check("несуществующее имя — ошибка, а не «нет ответа»", noName.Outcome == TcpOutcome.Error, noName.Describe());
+}
+
 Console.WriteLine("SSH через промежуточный сервер:");
 {
     var jump = new SshCredentials { Host = host, Port = port, User = user, Password = password };
