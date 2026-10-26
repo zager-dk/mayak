@@ -1,0 +1,27 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Самопроверка ядра
+        run: dotnet run --project tests/Mayak.SelfTest -c Release -- samples
+
+      - name: Сборка MayakVPN.exe
+        run: dotnet publish src/MayakVPN/MayakVPN.csproj -c Release -o dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MayakVPN
+          path: dist/MayakVPN.exe

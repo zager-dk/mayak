@@ -1,0 +1,42 @@
+<Window x:Class="MayakVPN.Views.DeviceDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Устройство" Width="460" SizeToContent="Height" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        Style="{StaticResource BaseWindow}">
+    <StackPanel Margin="24,18,24,20">
+        <TextBlock Style="{StaticResource H2}" x:Name="Header" />
+        <TextBlock Style="{StaticResource Hint}" x:Name="UserText" Margin="0,0,0,4" />
+
+        <TextBlock Style="{StaticResource FieldLabel}" Text="Тип устройства" />
+        <ComboBox x:Name="KindBox" DisplayMemberPath="Title" SelectionChanged="KindChanged" />
+        <TextBlock Style="{StaticResource Hint}" x:Name="FormatHint" />
+
+        <TextBlock Style="{StaticResource FieldLabel}" Text="Название устройства" />
+        <TextBox x:Name="NameBox" TextChanged="NameEdited" />
+
+        <TextBlock Style="{StaticResource FieldLabel}" Text="Максимальная скорость, Мбит/с" />
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <StackPanel>
+                <TextBlock Text="скачивание" Foreground="{StaticResource Muted}" FontSize="11.5" Margin="0,0,0,3" />
+                <TextBox x:Name="DownBox" />
+            </StackPanel>
+            <StackPanel Grid.Column="2">
+                <TextBlock Text="отдача" Foreground="{StaticResource Muted}" FontSize="11.5" Margin="0,0,0,3" />
+                <TextBox x:Name="UpBox" />
+            </StackPanel>
+        </Grid>
+        <CheckBox x:Name="Unlimited" Content="Без ограничений" Margin="0,10,0,0" Checked="UnlimitedChanged" Unchecked="UnlimitedChanged" />
+        <TextBlock Style="{StaticResource Hint}" Text="35 Мбит/с — с запасом для YouTube в 4K. Новый лимит применяется сразу, переподключаться не нужно." />
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+            <Button Content="Отмена" IsCancel="True" />
+            <Button Style="{StaticResource PrimaryButton}" x:Name="OkButton" Content="Сохранить" IsDefault="True" Click="Ok" Margin="0" />
+        </StackPanel>
+    </StackPanel>
+</Window>

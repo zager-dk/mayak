@@ -1,0 +1,77 @@
+<Window x:Class="MayakVPN.Views.InstallDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Установка VPN" Width="560" SizeToContent="Height" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        Style="{StaticResource BaseWindow}">
+    <StackPanel Margin="24,18,24,20">
+        <TextBlock Style="{StaticResource H2}" x:Name="Header" Text="Установка VPN" />
+        <TextBlock Style="{StaticResource Hint}" x:Name="HostText" Margin="0,0,0,4" />
+
+        <TextBlock Style="{StaticResource FieldLabel}" Text="Версия протокола AmneziaWG" />
+        <RadioButton x:Name="V2" IsChecked="True" Margin="0,2,0,0">
+            <StackPanel>
+                <TextBlock Text="AWG 2.0 — максимальная совместимость (рекомендуется)" FontWeight="SemiBold" />
+                <TextBlock Style="{StaticResource Hint}" Margin="0,2,0,0" Text="Работает в большинстве версий AmneziaVPN и AmneziaWG на Windows, Android, iPhone и Mac." />
+            </StackPanel>
+        </RadioButton>
+        <RadioButton x:Name="V3" Margin="0,10,0,0">
+            <StackPanel>
+                <TextBlock Text="AWG 3.1 — самая сильная маскировка" FontWeight="SemiBold" />
+                <TextBlock Style="{StaticResource Hint}" Margin="0,2,0,0" Text="Защита заголовков и случайные тайминги. Нужны самые свежие версии приложений — старые не подключатся." />
+            </StackPanel>
+        </RadioButton>
+
+        <Grid Margin="0,6,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="170" />
+            </Grid.ColumnDefinitions>
+            <StackPanel>
+                <TextBlock Style="{StaticResource FieldLabel}" Text="Название (так сервер будет называться у пользователей)" />
+                <TextBox x:Name="TitleBox" Text="Маяк VPN" />
+            </StackPanel>
+            <StackPanel Grid.Column="2">
+                <TextBlock Style="{StaticResource FieldLabel}" Text="UDP-порт" />
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" Content="⟳" ToolTip="Другой случайный порт" Click="NewPort" Margin="6,0,0,0" Padding="9,5" />
+                    <TextBox x:Name="PortBox" />
+                </DockPanel>
+            </StackPanel>
+        </Grid>
+
+        <TextBlock Style="{StaticResource FieldLabel}" Text="DNS для клиентов" />
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBox x:Name="Dns1Box" Text="1.1.1.1" />
+            <TextBox Grid.Column="2" x:Name="Dns2Box" Text="1.0.0.1" />
+        </Grid>
+
+        <TextBlock Style="{StaticResource FieldLabel}" Text="Лимит скорости для новых устройств, Мбит/с (скачивание / отдача, 0 — без ограничений)" />
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBox x:Name="DownBox" Text="35" />
+            <TextBox Grid.Column="2" x:Name="UpBox" Text="35" />
+        </Grid>
+        <TextBlock Style="{StaticResource Hint}" Text="35 Мбит/с с запасом хватает на YouTube в 4K (ему нужно около 20–25)." />
+
+        <Border x:Name="ReinstallWarning" Background="#FDECEC" BorderBrush="#F2B8B8" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,14,0,0" Visibility="Collapsed">
+            <TextBlock TextWrapping="Wrap" Foreground="#8A1F1F"
+                       Text="Текущий VPN-контейнер будет удалён вместе с ключами. Список пользователей Маяка тоже начнётся заново." />
+        </Border>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+            <Button Content="Отмена" IsCancel="True" />
+            <Button Style="{StaticResource PrimaryButton}" x:Name="OkButton" Content="Установить" IsDefault="True" Click="Ok" Margin="0" />
+        </StackPanel>
+    </StackPanel>
+</Window>

@@ -1,0 +1,66 @@
+<Window x:Class="MayakVPN.Views.ServerDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Сервер" Width="480" SizeToContent="Height" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        Style="{StaticResource BaseWindow}">
+    <StackPanel Margin="24,18,24,20">
+        <TextBlock Style="{StaticResource H2}" x:Name="Header" Text="Новый сервер" />
+
+        <TextBlock Style="{StaticResource FieldLabel}" Text="Название (только для вас)" Margin="0,4,0,4" />
+        <TextBox x:Name="NameBox" />
+
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="90" />
+            </Grid.ColumnDefinitions>
+            <StackPanel>
+                <TextBlock Style="{StaticResource FieldLabel}" Text="IP-адрес или домен сервера" />
+                <TextBox x:Name="HostBox" />
+            </StackPanel>
+            <StackPanel Grid.Column="2">
+                <TextBlock Style="{StaticResource FieldLabel}" Text="SSH-порт" />
+                <TextBox x:Name="PortBox" Text="22" />
+            </StackPanel>
+        </Grid>
+
+        <TextBlock Style="{StaticResource FieldLabel}" Text="Логин" />
+        <TextBox x:Name="UserBox" Text="root" />
+
+        <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+            <RadioButton x:Name="UsePassword" Content="Пароль" IsChecked="True" Margin="0,0,20,0" Checked="AuthChanged" />
+            <RadioButton x:Name="UseKey" Content="SSH-ключ" Checked="AuthChanged" />
+        </StackPanel>
+
+        <StackPanel x:Name="PasswordPanel">
+            <TextBlock Style="{StaticResource FieldLabel}" Text="Пароль" />
+            <PasswordBox x:Name="PasswordBox" />
+        </StackPanel>
+
+        <StackPanel x:Name="KeyPanel" Visibility="Collapsed">
+            <TextBlock Style="{StaticResource FieldLabel}" Text="Файл приватного ключа (OpenSSH, например id_ed25519)" />
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Content="Обзор…" Click="BrowseKey" Margin="8,0,0,0" />
+                <TextBox x:Name="KeyBox" />
+            </DockPanel>
+            <TextBlock Style="{StaticResource FieldLabel}" Text="Пароль ключа (если есть)" />
+            <PasswordBox x:Name="PassphraseBox" />
+        </StackPanel>
+
+        <TextBlock Style="{StaticResource Hint}" Margin="0,12,0,0">
+            Пароли хранятся на этом компьютере в зашифрованном виде (Windows DPAPI). Нужен root или пользователь с sudo без пароля.
+        </TextBlock>
+
+        <DockPanel x:Name="FingerprintPanel" Margin="0,12,0,0" Visibility="Collapsed">
+            <Button DockPanel.Dock="Right" Content="Сбросить" Click="ResetFingerprint" Margin="8,0,0,0" Padding="10,4" />
+            <TextBlock x:Name="FingerprintText" Style="{StaticResource Hint}" Margin="0" VerticalAlignment="Center" />
+        </DockPanel>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+            <Button Content="Отмена" IsCancel="True" />
+            <Button Style="{StaticResource PrimaryButton}" Content="Сохранить" IsDefault="True" Click="Ok" Margin="0" />
+        </StackPanel>
+    </StackPanel>
+</Window>

@@ -1,0 +1,74 @@
+<Window x:Class="MayakVPN.Views.ShareWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Выдача доступа" Width="860" SizeToContent="Height" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        Style="{StaticResource BaseWindow}">
+    <StackPanel Margin="24,18,24,20">
+        <TextBlock Style="{StaticResource H1}" x:Name="Header" />
+        <TextBlock Style="{StaticResource Hint}" x:Name="SubHeader" Margin="0,4,0,14" FontSize="13" />
+
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="330" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel>
+                <Border Style="{StaticResource CardBorder}" Background="#F0FAF4" BorderBrush="#BFE5CE" Padding="14,10" x:Name="SavedCard">
+                    <DockPanel>
+                        <Button DockPanel.Dock="Right" Content="Показать в папке" Click="ShowInFolder" Margin="10,0,0,0" Padding="10,5" VerticalAlignment="Center" />
+                        <StackPanel>
+                            <TextBlock Text="Файл сохранён" FontWeight="SemiBold" Foreground="#14532D" />
+                            <TextBlock x:Name="SavedPath" TextWrapping="Wrap" Foreground="#14532D" FontSize="12" Margin="0,2,0,0" />
+                        </StackPanel>
+                    </DockPanel>
+                </Border>
+
+                <Border Style="{StaticResource CardBorder}" Margin="0,12,0,0">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource H2}" Text="Как подключиться" />
+                        <TextBlock x:Name="Instructions" TextWrapping="Wrap" LineHeight="21" />
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource CardBorder}" Margin="0,12,0,0">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource H2}" Text="Другие способы передать" />
+                        <WrapPanel>
+                            <Button Content="Копировать ключ vpn://" Click="CopyKey" Margin="0,0,8,8" />
+                            <Button Content="Копировать текст .conf" Click="CopyConf" Margin="0,0,8,8" />
+                            <Button Content="Сохранить .vpn как…" Click="SaveVpnAs" Margin="0,0,8,8" />
+                            <Button Content="Сохранить .conf как…" Click="SaveConfAs" Margin="0,0,8,8" />
+                        </WrapPanel>
+                        <TextBlock Style="{StaticResource Hint}" Text="Ключ vpn:// можно отправить сообщением: в AmneziaVPN он вставляется через «Добавить» → «Вставить ключ». Это личный ключ — не публикуйте его." />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <Border Grid.Column="2" Style="{StaticResource CardBorder}" VerticalAlignment="Top">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource H2}" Text="QR-код" />
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                        <RadioButton x:Name="QrAmnezia" Content="AmneziaVPN" Margin="0,0,16,0" Checked="QrModeChanged" />
+                        <RadioButton x:Name="QrConf" Content="AmneziaWG (.conf)" Checked="QrModeChanged" />
+                    </StackPanel>
+                    <Border Background="White" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6" Padding="8">
+                        <Image x:Name="QrImage" Width="280" Height="280" RenderOptions.BitmapScalingMode="NearestNeighbor" />
+                    </Border>
+                    <DockPanel x:Name="PagerPanel" Margin="0,10,0,0" Visibility="Collapsed">
+                        <Button DockPanel.Dock="Left" Content="‹" Click="PrevQr" Padding="12,4" />
+                        <Button DockPanel.Dock="Right" Content="›" Click="NextQr" Padding="12,4" Margin="0" />
+                        <TextBlock x:Name="PagerText" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </DockPanel>
+                    <TextBlock x:Name="QrHint" Style="{StaticResource Hint}" Margin="0,8,0,0" />
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
+            <Button Style="{StaticResource PrimaryButton}" Content="Готово" IsCancel="True" IsDefault="True" Click="CloseClick" Margin="0" Padding="22,8" />
+        </StackPanel>
+    </StackPanel>
+</Window>
