@@ -244,6 +244,44 @@ Console.WriteLine("Вердикты проверки:");
     Check("всё хорошо → работает со скоростью", good.Status == CheckStatus.Ok && good.Summary.Contains("80"));
 }
 
+Console.WriteLine("Проверка адреса:");
+{
+    Check("адрес очищается от мусора", AddressCheck.Normalize(" ssh root@194.87.125.238:22 ") == "194.87.125.238" && AddressCheck.Normalize("https://vpn.example.com/") == "vpn.example.com");
+    Check("в shell не попадут опасные символы", AddressCheck.IsValidHost("194.87.125.238") && AddressCheck.IsValidHost("my-vps.example.com")
+        && !AddressCheck.IsValidHost("1.2.3.4;rm -rf") && !AddressCheck.IsValidHost("$(id)") && !AddressCheck.IsValidHost(""));
+    bool threw = false;
+    try { AddressCheck.RemoteScript("a b", new[] { 22 }); } catch (ArgumentException) { threw = true; }
+    Check("скрипт для входа не собирается с плохим адресом", threw);
+
+    var remote = AddressCheck.ParseRemote("Москва", "1.2.3.4",
+        "MAYAK_TCP 1.2.3.4 22 timeout 5003\nMAYAK_TCP github.com 443 open 31\nMAYAK_TCP 1.2.3.4 443 timeout 5001\nMAYAK_TCP ya.ru 443 open 2\n");
+    Check("вывод входа разобран", remote.Target.Count == 2 && !remote.Routed && remote.ForeignControl?.Routed == true && remote.LocalControl?.Routed == true);
+
+    TcpProbe P(string h, int port, TcpOutcome o, double ms = 40) => new(h, port, o, ms);
+    VantageResult Local(params TcpProbe[] target) => new()
+    {
+        Name = "Этот компьютер", IsLocal = true, Target = target.ToList(),
+        ForeignControl = P("github.com", 443, TcpOutcome.Open), LocalControl = P("ya.ru", 443, TcpOutcome.Open),
+    };
+    var relayOk = new VantageResult { Name = "Москва", Target = { P("1.2.3.4", 22, TcpOutcome.Open) } };
+
+    var blocked = AddressCheck.Build("1.2.3.4", Local(P("1.2.3.4", 22, TcpOutcome.Timeout), P("1.2.3.4", 443, TcpOutcome.Timeout)), new[] { remote });
+    Check("диапазон не маршрутизируется → не подходит", blocked.Verdict == CheckStatus.Fail && blocked.VerdictTitle.Contains("Не подходит"));
+    var refused = AddressCheck.Build("1.2.3.4", Local(P("1.2.3.4", 22, TcpOutcome.Timeout), P("1.2.3.4", 443, TcpOutcome.Refused)), Array.Empty<VantageResult>());
+    Check("закрытый порт с ответом = маршрут есть → подходит", refused.Verdict == CheckStatus.Ok);
+    var viaRelay = AddressCheck.Build("1.2.3.4", Local(P("1.2.3.4", 22, TcpOutcome.Timeout)), new[] { relayOk });
+    Check("напрямую нет, с входа есть → только через вход", viaRelay.Verdict == CheckStatus.Warn && viaRelay.VerdictText.Contains("Москва"));
+    var browsec = AddressCheck.Build("1.2.3.4", Local(P("1.2.3.4", 22, TcpOutcome.Open, 1.2)), Array.Empty<VantageResult>());
+    Check("перехват локальным VPN распознан", browsec.Verdict == CheckStatus.Warn && browsec.VerdictTitle.Contains("Выключите"));
+    Check("локальная сеть не считается перехватом", !P("192.168.1.10", 22, TcpOutcome.Open, 0.5).Intercepted);
+    var noNet = AddressCheck.Build("1.2.3.4", new VantageResult
+    {
+        IsLocal = true, Target = { P("1.2.3.4", 22, TcpOutcome.Error) },
+        ForeignControl = P("github.com", 443, TcpOutcome.Error), LocalControl = P("ya.ru", 443, TcpOutcome.Error),
+    }, Array.Empty<VantageResult>());
+    Check("нет интернета — так и сказано", noNet.VerdictTitle.Contains("Нет интернета"));
+}
+
 Console.WriteLine("Скрипты в сборке:");
 foreach (var s in new[] { "install_docker.sh", "prepare_host.sh", "Dockerfile", "start.sh", "mayak_tc.sh", "xray.Dockerfile", "xray_start.sh", "xray_configure.sh" })
 {

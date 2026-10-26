@@ -118,7 +118,14 @@ public sealed class RelayServer : IDisposable
         return new RelayStatus(conf.Length > 0, Get("TARGET_HOST"), Get("FORWARDS"), active, int.TryParse(rules, out var n) ? n : 0);
     }
 
-    public bool IsAlive() => _ssh.IsAlive();
+    /// <summary>Проверяет с входа, доступен ли адрес (TCP-порты и контрольные адреса).</summary>
+    public Probe.VantageResult CheckAddress(string name, string host, IReadOnlyList<int> ports)
+    {
+        var r = _ssh.RunScript(Probe.AddressCheck.RemoteScript(host, ports), TimeSpan.FromSeconds(60));
+        return Probe.AddressCheck.ParseRemote(name, host, r.Output);
+    }
+
+        public bool IsAlive() => _ssh.IsAlive();
 
     public void Dispose() => _ssh.Dispose();
 }

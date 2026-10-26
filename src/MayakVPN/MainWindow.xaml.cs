@@ -1,5 +1,6 @@
 using System.Collections.Specialized;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using Mayak.Core.Models;
 using Mayak.Core.Server;
@@ -26,6 +27,11 @@ public partial class MainWindow : Window, IUi
         };
     }
 
+    private void Servers_DoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (_vm.EditServerCommand.CanExecute(null)) _vm.EditServerCommand.Execute(null);
+    }
+
     private void DevicesGrid_DoubleClick(object sender, MouseButtonEventArgs e)
     {
         if (_vm.ShareDeviceCommand.CanExecute(null)) _vm.ShareDeviceCommand.Execute(null);
@@ -35,8 +41,21 @@ public partial class MainWindow : Window, IUi
 
     public ServerProfile? EditServer(ServerProfile? existing, IEnumerable<ServerProfile> jumpCandidates)
     {
-        var dlg = new ServerDialog(existing, jumpCandidates) { Owner = this };
+        var dlg = new ServerDialog(existing, jumpCandidates, _vm.CheckAddressAsync) { Owner = this };
         return dlg.ShowDialog() == true ? dlg.Result : null;
+    }
+
+    public void ShowAddressCheck(string? host) =>
+        new AddressCheckDialog(_vm.CheckAddressAsync, host) { Owner = this }.ShowDialog();
+
+    /// <summary>Кнопка «⋯»: открывает её меню под ней.</summary>
+    private void OpenMenu(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { ContextMenu: { } menu } b) return;
+        menu.DataContext = b.DataContext;
+        menu.PlacementTarget = b;
+        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        menu.IsOpen = true;
     }
 
     public InstallOptions? AskInstall(bool reinstall, string host)

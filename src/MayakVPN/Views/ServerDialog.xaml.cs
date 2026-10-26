@@ -6,16 +6,19 @@ namespace MayakVPN.Views;
 public partial class ServerDialog : Window
 {
     private readonly ServerProfile? _existing;
+    private readonly AddressCheckRunner? _checkAddress;
     private bool _resetFingerprint;
 
     public ServerProfile? Result { get; private set; }
 
     private sealed record JumpOption(Guid? Id, string Name);
 
-    public ServerDialog(ServerProfile? existing, IEnumerable<ServerProfile> jumpCandidates)
+    public ServerDialog(ServerProfile? existing, IEnumerable<ServerProfile> jumpCandidates, AddressCheckRunner? checkAddress = null)
     {
         InitializeComponent();
         _existing = existing;
+        _checkAddress = checkAddress;
+        if (checkAddress == null) CheckLink.Visibility = Visibility.Collapsed;
         var options = new List<JumpOption> { new(null, "Напрямую") };
         options.AddRange(jumpCandidates
             .Where(c => c.Id != existing?.Id && c.JumpProfileId == null)
@@ -40,6 +43,12 @@ public partial class ServerDialog : Window
             }
         }
         Loaded += (_, _) => (existing == null ? HostBox : NameBox).Focus();
+    }
+
+    private void CheckAddress(object sender, RoutedEventArgs e)
+    {
+        if (_checkAddress == null) return;
+        new AddressCheckDialog(_checkAddress, HostBox.Text) { Owner = this }.ShowDialog();
     }
 
     private void AuthChanged(object sender, RoutedEventArgs e)

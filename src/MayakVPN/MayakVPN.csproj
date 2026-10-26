@@ -16,7 +16,7 @@
     <Product>Маяк VPN</Product>
     <Company>Mayak VPN</Company>
     <Description>Маяк VPN — управление собственным сервером AmneziaWG</Description>
-    <Version>1.3.0</Version>
+    <Version>1.4.0</Version>
 
     <!-- Один .exe без установки .NET -->
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>

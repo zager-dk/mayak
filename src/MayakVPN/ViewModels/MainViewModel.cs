@@ -25,6 +25,7 @@ public sealed class MainViewModel : ObservableObject
         _settings = ProfileStore.Load();
         Servers = new ObservableCollection<ServerProfile>(_settings.Servers);
         MigrateProfiles();
+        Foreign.CollectionChanged += (_, _) => OnPropertyChanged(nameof(ForeignBannerText));
 
         AddServerCommand = new RelayCommand(AddServer, () => !IsBusy);
         EditServerCommand = new RelayCommand(EditServer, () => !IsBusy && SelectedServer != null);
@@ -55,9 +56,11 @@ public sealed class MainViewModel : ObservableObject
         RemoveRelayCommand = new RelayCommand(() => _ = RemoveRelayAsync(), () => !IsBusy && SelectedServer?.RelayProfileId != null);
         InstallXrayCommand = new RelayCommand(() => _ = InstallXrayAsync(), () => !IsBusy && Snapshot != null);
         UninstallXrayCommand = new RelayCommand(() => _ = UninstallXrayAsync(), () => !IsBusy && Snapshot?.Xray != null);
-        RunCheckCommand = new RelayCommand(() => _ = RunCheckAsync(), () => !IsBusy && !CheckRunning && Snapshot != null);
+        RunCheckCommand = new RelayCommand(() => _ = RunCheckAsync(), () => !IsBusy && !CheckRunning && (Snapshot != null || OfflineKit != null));
         CancelCheckCommand = new RelayCommand(() => _checkCts?.Cancel(), () => CheckRunning);
 
+        CheckAddressCommand = new RelayCommand(() => _ui.ShowAddressCheck(SelectedServer?.IsRelay == false ? SelectedServer.Host : null));
+        ToggleForeignCommand = new RelayCommand(() => ShowForeign = !ShowForeign);
         OpenExportFolderCommand = new RelayCommand(OpenExportFolder);
         ChangeExportFolderCommand = new RelayCommand(ChangeExportFolder);
         ClearLogCommand = new RelayCommand(() => LogLines.Clear());
@@ -97,6 +100,7 @@ public sealed class MainViewModel : ObservableObject
                 _settings.LastServerId = value.Id;
                 SaveSettingsFile();
                 LoadCheckHistory();
+                OfflineKit = value.IsRelay ? null : CheckKitStore.Load(value.Id);
                 _ = ReloadAsync();
             }
             OnPropertyChanged(nameof(HasServer));
@@ -126,6 +130,72 @@ public sealed class MainViewModel : ObservableObject
 
     public bool HasServer => SelectedServer != null;
 
+    private CheckKit? _offlineKit;
+    /// <summary>Сохранённые на компьютере данные для «Проверки» без SSH.</summary>
+    private CheckKit? OfflineKit
+    {
+        get => _offlineKit;
+        set
+        {
+            _offlineKit = value;
+            OnPropertyChanged(nameof(ShowTabs));
+            OnPropertyChanged(nameof(OfflineCheckText));
+            CommandManager.InvalidateRequerySuggested();
+        }
+    }
+
+    /// <summary>Вкладки видны и без SSH, если есть сохранённые данные для «Проверки».</summary>
+    public bool ShowTabs => IsInstalled || (State == null && !IsRelayProfile && OfflineKit != null);
+
+    private int _tabIndex;
+    public int TabIndex { get => _tabIndex; set => Set(ref _tabIndex, value); }
+    private const int CheckTab = 1;
+
+    /// <summary>Подсказка на «Проверке», когда SSH недоступен.</summary>
+    public string OfflineCheckText => Snapshot == null && OfflineKit != null
+        ? $"Нет связи с сервером по SSH — проверка пойдёт по данным, сохранённым {OfflineKit.SavedUtc.ToLocalTime():dd.MM HH:mm}."
+        : "";
+
+    private bool _showForeign;
+    public bool ShowForeign
+    {
+        get => _showForeign;
+        set { Set(ref _showForeign, value); OnPropertyChanged(nameof(ForeignToggleText)); }
+    }
+    public string ForeignToggleText => ShowForeign ? "Скрыть" : "Показать";
+    public string ForeignBannerText => Foreign.Count == 0 ? "" :
+        $"На сервере {Foreign.Count} {Format.Plural(Foreign.Count, "подключение", "подключения", "подключений")} из приложения AmneziaVPN — не привязаны к пользователям.";
+
+    public string UserTitle => SelectedUser?.Name ?? "Выберите пользователя";
+    public bool HasSelectedUser => SelectedUser != null;
+
+    /// <summary>Проверка адреса: с этого компьютера и со всех входных серверов из списка.</summary>
+    public async Task<Mayak.Core.Probe.AddressCheckReport> CheckAddressAsync(string host, IProgress<string> progress, CancellationToken ct)
+    {
+        var relays = Servers.Where(s => s.IsRelay).Select(r => (Profile: r, Creds: CredsFor(r))).ToList();
+        progress.Report(relays.Count == 0 ? "Проверяю с этого компьютера…" : $"Проверяю с этого компьютера и с {string.Join(", ", relays.Select(r => "«" + r.Profile.Name + "»"))}…");
+        var local = AddressCheck.FromThisComputerAsync(host, AddressCheck.DefaultPorts, ct);
+        var remote = relays.Select(r => Task.Run(() =>
+        {
+            try
+            {
+                using var relay = new RelayServer(r.Creds);
+                relay.Connect();
+                RememberFingerprint(r.Profile, relay.Fingerprint);
+                return relay.CheckAddress(r.Profile.Name, host, AddressCheck.DefaultPorts);
+            }
+            catch (Exception ex)
+            {
+                return new VantageResult { Name = r.Profile.Name, Failure = "нет связи со входом по SSH: " + FirstLine(ex.Message) };
+            }
+        }, ct)).ToList();
+        var localResult = await local;
+        var remoteResults = await Task.WhenAll(remote);
+        var report = AddressCheck.Build(host, localResult, remoteResults);
+        AppendLog($"Проверка адреса {host}: {report.VerdictTitle}");
+        return report;
+    }
+
     private ServerSnapshot? _snapshot;
     public ServerSnapshot? Snapshot
     {
@@ -141,6 +211,7 @@ public sealed class MainViewModel : ObservableObject
             OnPropertyChanged(nameof(XrayEndpointText));
             OnPropertyChanged(nameof(XrayButtonText));
             OnPropertyChanged(nameof(HasXray));
+            OnPropertyChanged(nameof(OfflineCheckText));
         }
     }
 
@@ -165,6 +236,7 @@ public sealed class MainViewModel : ObservableObject
         {
             Set(ref _state, value);
             OnPropertyChanged(nameof(IsInstalled));
+            OnPropertyChanged(nameof(ShowTabs));
             OnPropertyChanged(nameof(StateText));
             OnPropertyChanged(nameof(InstallButtonText));
             OnPropertyChanged(nameof(NeedsInstall));
@@ -210,6 +282,8 @@ public sealed class MainViewModel : ObservableObject
         {
             if (Set(ref _selectedUser, value)) RebuildDevices();
             OnPropertyChanged(nameof(ToggleUserText));
+            OnPropertyChanged(nameof(UserTitle));
+            OnPropertyChanged(nameof(HasSelectedUser));
             OnPropertyChanged(nameof(DevicesHeader));
         }
     }
@@ -300,6 +374,8 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand UninstallXrayCommand { get; }
     public RelayCommand RunCheckCommand { get; }
     public RelayCommand CancelCheckCommand { get; }
+    public RelayCommand CheckAddressCommand { get; }
+    public RelayCommand ToggleForeignCommand { get; }
     public RelayCommand OpenExportFolderCommand { get; }
     public RelayCommand ChangeExportFolderCommand { get; }
     public RelayCommand ClearLogCommand { get; }
@@ -368,6 +444,7 @@ public sealed class MainViewModel : ObservableObject
             return;
         var p = SelectedServer;
         foreach (var d in dependents) d.JumpProfileId = null;
+        CheckKitStore.Delete(p.Id);
         SelectedServer = null;
         Servers.Remove(p);
         _settings.Servers.Remove(p);
@@ -401,11 +478,13 @@ public sealed class MainViewModel : ObservableObject
                 var server = EnsureConnected(profile);
                 var st = server.GetState();
                 ServerSnapshot? sn = st == ServerState.Running ? server.Load() : null;
+                if (sn != null) PrepareOfflineCheck(server, sn, profile);
                 return (st, sn);
             });
             if (profile != SelectedServer) return;
             State = state;
             ApplySnapshot(snap);
+            if (snap != null) OfflineKit = CheckKitStore.Load(profile.Id);
             StatusText = state == ServerState.Running
                 ? $"Обновлено {DateTime.Now:HH:mm:ss}"
                 : StateText;
@@ -416,7 +495,13 @@ public sealed class MainViewModel : ObservableObject
             if (Snapshot == null)
             {
                 State = null;
-                if (!quiet) ShowError(ex);
+                if (OfflineKit != null)
+                {
+                    // Данные для проверки сохранены раньше — сразу открываем «Проверку».
+                    AppendLog("Нет связи с сервером по SSH: " + FirstLine(ex.Message));
+                    TabIndex = CheckTab;
+                }
+                else if (!quiet) ShowError(ex);
             }
             else
             {
@@ -428,6 +513,25 @@ public sealed class MainViewModel : ObservableObject
         finally
         {
             IsBusy = false;
+        }
+    }
+
+    /// <summary>
+    /// Создаёт проверочную учётку при первом же подключении и сохраняет данные для «Проверки» на компьютере,
+    /// чтобы потом проверять протоколы без SSH (например, без стороннего VPN), даже после перезапуска Маяка.
+    /// </summary>
+    private void PrepareOfflineCheck(MayakServer server, ServerSnapshot snap, ServerProfile profile)
+    {
+        try
+        {
+            var p = snap.Db.Probe;
+            if (p == null || string.IsNullOrEmpty(p.AwgPrivateKey) || (snap.Xray != null && string.IsNullOrEmpty(p.XrayId)))
+                server.EnsureProbe(snap);
+            if (CheckKit.From(snap) is { } kit) CheckKitStore.Save(profile.Id, kit);
+        }
+        catch (Exception ex)
+        {
+            AppendLog("Не удалось подготовить проверку без SSH: " + FirstLine(ex.Message));
         }
     }
 
@@ -469,6 +573,8 @@ public sealed class MainViewModel : ObservableObject
 
     private void ClearData()
     {
+        OfflineKit = null;
+        TabIndex = 0;
         Snapshot = null;
         State = null;
         Users.Clear();
@@ -512,6 +618,10 @@ public sealed class MainViewModel : ObservableObject
         _selectedUser = Users.FirstOrDefault(u => u.Model.Id == selUser) ?? Users.FirstOrDefault();
         OnPropertyChanged(nameof(SelectedUser));
         OnPropertyChanged(nameof(ToggleUserText));
+        OnPropertyChanged(nameof(UserTitle));
+        OnPropertyChanged(nameof(HasSelectedUser));
+        OnPropertyChanged(nameof(ForeignBannerText));
+        if (Foreign.Count == 0) ShowForeign = false;
         OnPropertyChanged(nameof(DevicesHeader));
         RebuildDevices();
         SelectedDevice = Devices.FirstOrDefault(d => d.Model.Id == selDevice);
@@ -885,9 +995,16 @@ public sealed class MainViewModel : ObservableObject
 
     private async Task RunCheckAsync()
     {
-        var snap = Snapshot;
         var profile = SelectedServer;
-        if (snap == null || profile == null) return;
+        if (profile == null) return;
+        var snap = Snapshot;
+        bool offline = snap == null;
+        if (snap == null)
+        {
+            // SSH недоступен — проверяем по данным, сохранённым при прошлом подключении.
+            if (OfflineKit == null) return;
+            snap = OfflineKit.ToSnapshot();
+        }
 
         ProbeIdentity? probe = snap.Db.Probe;
         string address = "";
@@ -897,10 +1014,12 @@ public sealed class MainViewModel : ObservableObject
         BusyText = "Подготовка проверки на сервере…";
         try
         {
+            if (offline) throw new MayakException("SSH недоступен, проверка по сохранённым данным");
             await Task.Run(() =>
             {
                 var s = EnsureConnected(profile);
                 probe = s.EnsureProbe(snap);
+                if (CheckKit.From(snap) is { } kit) CheckKitStore.Save(profile.Id, kit);
                 address = s.GetClientAddress();
                 if (snap.Xray != null)
                 {
@@ -913,7 +1032,7 @@ public sealed class MainViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            DisconnectServer();
+            if (!offline) DisconnectServer();
             AppendLog("SSH к серверу недоступен из этой сети: " + ex.Message);
         }
         finally
@@ -925,7 +1044,7 @@ public sealed class MainViewModel : ObservableObject
         {
             if (probe == null || string.IsNullOrEmpty(probe.AwgPrivateKey))
             {
-                _ui.Error("Нет связи с сервером по SSH, а проверочная учётка ещё не создана.\n\nПодключитесь к серверу один раз (например, через другой VPN) и запустите проверку — после этого её можно запускать и без SSH, из любой сети, не перезапуская Маяк.");
+                _ui.Error("Нет связи с сервером по SSH, а проверочная учётка ещё не создана.\n\nПодключитесь к серверу один раз (например, через другой VPN) — Маяк создаст её сам. После этого проверку можно запускать без SSH из любой сети, в том числе после перезапуска Маяка.");
                 return;
             }
             address = "не определён (SSH недоступен)";

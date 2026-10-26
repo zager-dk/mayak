@@ -77,14 +77,14 @@ public sealed class ServerProfile
 
     private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("MayakVPN.v1");
 
-    private static string? Protect(string? plain)
+    internal static string? Protect(string? plain)
     {
         if (string.IsNullOrEmpty(plain)) return null;
         var data = ProtectedData.Protect(Encoding.UTF8.GetBytes(plain), Entropy, DataProtectionScope.CurrentUser);
         return Convert.ToBase64String(data);
     }
 
-    private static string? Unprotect(string? cipher)
+    internal static string? Unprotect(string? cipher)
     {
         if (string.IsNullOrEmpty(cipher)) return null;
         try

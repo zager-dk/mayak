@@ -14,6 +14,7 @@ public sealed record RelaySetup(ServerProfile Relay, bool IsNew, bool ManageViaR
 public interface IUi
 {
     ServerProfile? EditServer(ServerProfile? existing, IEnumerable<ServerProfile> jumpCandidates);
+    void ShowAddressCheck(string? host);
     InstallOptions? AskInstall(bool reinstall, string host);
     XrayInstallOptions? AskXrayInstall(bool reinstall, XrayEndpoint? current);
     RelaySetup? AskRelay(ServerProfile main, IEnumerable<ServerProfile> candidates);

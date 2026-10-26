@@ -25,6 +25,8 @@
                 <TextBox x:Name="PortBox" Text="22" />
             </StackPanel>
         </Grid>
+        <Button x:Name="CheckLink" Style="{StaticResource LinkButton}" Content="Проверить, доступен ли адрес из России →"
+                Click="CheckAddress" HorizontalAlignment="Left" Margin="0,6,0,0" />
 
         <TextBlock Style="{StaticResource FieldLabel}" Text="Логин" />
         <TextBox x:Name="UserBox" Text="root" />

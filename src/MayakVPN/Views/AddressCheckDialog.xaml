@@ -1,0 +1,67 @@
+<Window x:Class="MayakVPN.Views.AddressCheckDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:v="clr-namespace:MayakVPN.Views"
+        Title="Проверка адреса" Width="600" SizeToContent="Height" MaxHeight="760" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        Style="{StaticResource BaseWindow}">
+    <Window.Resources>
+        <v:StatusToBrush x:Key="StatusBrush" />
+    </Window.Resources>
+    <DockPanel Margin="24,18,24,20">
+        <StackPanel DockPanel.Dock="Top">
+            <TextBlock Style="{StaticResource H2}" Text="Доступен ли адрес из России" />
+            <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,12">
+                Проверьте IP нового сервера до установки VPN. Маяк попробует достучаться до него с этого компьютера и с входных серверов из списка. Перед проверкой выключите другой VPN.
+            </TextBlock>
+            <DockPanel>
+                <Button x:Name="RunButton" DockPanel.Dock="Right" Style="{StaticResource PrimaryButton}" Content="Проверить" IsDefault="True"
+                        Click="Run" Margin="8,0,0,0" Padding="18,7" />
+                <TextBox x:Name="HostBox" FontSize="14" />
+            </DockPanel>
+            <StackPanel x:Name="ProgressPanel" Margin="0,12,0,0" Visibility="Collapsed">
+                <TextBlock x:Name="ProgressText" Foreground="{StaticResource Muted}" />
+                <ProgressBar IsIndeterminate="True" Height="4" Margin="0,6,0,0" Foreground="{StaticResource Amber}" BorderThickness="0" />
+            </StackPanel>
+        </StackPanel>
+
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button Content="Закрыть" IsCancel="True" Margin="0" />
+        </StackPanel>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,14,0,0">
+            <StackPanel>
+                <Border x:Name="VerdictCard" Visibility="Collapsed" CornerRadius="8" BorderThickness="0,0,0,0" Padding="16,12" Margin="0,0,0,10">
+                    <DockPanel>
+                        <Border x:Name="VerdictBadge" DockPanel.Dock="Left" Width="30" Height="30" CornerRadius="15" Margin="0,0,12,0" VerticalAlignment="Top">
+                            <TextBlock x:Name="VerdictIcon" Foreground="White" FontWeight="Bold" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <StackPanel>
+                            <TextBlock x:Name="VerdictTitle" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
+                            <TextBlock x:Name="VerdictText" TextWrapping="Wrap" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </DockPanel>
+                </Border>
+
+                <ItemsControl x:Name="LinesList">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="0,10">
+                                <DockPanel>
+                                    <Ellipse DockPanel.Dock="Left" Width="10" Height="10" Margin="2,5,12,0" VerticalAlignment="Top"
+                                             Fill="{Binding StatusKind, Converter={StaticResource StatusBrush}}" />
+                                    <StackPanel>
+                                        <TextBlock>
+                                            <Run Text="{Binding Protocol, Mode=OneWay}" FontWeight="SemiBold" /><Run Text="  ·  " Foreground="{StaticResource Muted}" /><Run Text="{Binding Summary, Mode=OneWay}" />
+                                        </TextBlock>
+                                        <TextBlock Text="{Binding Details}" Style="{StaticResource Hint}" FontFamily="Cascadia Mono, Consolas" FontSize="11.5" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</Window>

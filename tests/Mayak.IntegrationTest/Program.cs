@@ -1,3 +1,4 @@
+using Mayak.Core.Probe;
 using System.Text.Json.Nodes;
 using Mayak.Core.Awg;
 using Mayak.Core.Export;
@@ -159,6 +160,15 @@ Check("служебная учётка не попала в clientsTable и ли
 var probe2 = server.EnsureProbe(snap);
 Check("повторный вызов не плодит учётки", probe2.AwgPublicKey == probe.AwgPublicKey && probe2.XrayId == probe.XrayId);
 Check("адрес клиента виден сервером", server.GetClientAddress() == "127.0.0.1");
+{
+    var kitJson = CheckKit.From(snap)!.ToJson();
+    var ks = CheckKit.FromJson(kitJson)!.ToSnapshot();
+    Check("данные для проверки без SSH переживают сохранение",
+        ks.Endpoint.Port == snap.Endpoint.Port && ks.Endpoint.Parameters.H1 == snap.Endpoint.Parameters.H1 &&
+        ks.Endpoint.ServerPublicKey == snap.Endpoint.ServerPublicKey && ks.Db.Probe!.AwgPrivateKey == probe.AwgPrivateKey &&
+        ks.Xray?.PublicKey == snap.Xray?.PublicKey && ks.ServerAddress == snap.ServerAddress);
+    Check("в сохранённых данных нет ключей пользователей", snap.Db.AllDevices.All(d => !kitJson.Contains(d.PrivateKey)));
+}
 var st = server.SelfTestXray(snap, probe);
 Check("самопроверка Xray выполняется и честно сообщает результат (на стенде без настоящего xray — «не прошла»)", !st.Ok && st.Details.Contains("код"), st.Details);
 Check("самопроверка не оставила временный конфиг", !File.Exists(XrayRoot + "/tmp/mayak_selftest.json") && !File.Exists("/tmp/mayak_selftest.json"));
@@ -189,6 +199,12 @@ Console.WriteLine("Входной сервер (каскад):");
     Check("вход без проброса SSH проверяет доступность SSH основного", !unreachable2.Contains(2222) && unreachable2.Contains(1), string.Join(",", unreachable2));
     Check("порт 22022 больше не пробрасывается", !File.ReadAllText("/etc/mayak-relay.conf").Contains("tcp:"));
     relay.Remove();
+
+    var seen = relay.CheckAddress("Москва", "127.0.0.1", new[] { 2222, 1 });
+    Check("проверка адреса с входа: открытый и закрытый порт различаются",
+        seen.Target.Any(t => t.Port == 2222 && t.Outcome == TcpOutcome.Open) && seen.Target.Any(t => t.Port == 1 && t.Outcome == TcpOutcome.Refused) && seen.Routed,
+        string.Join("; ", seen.Target.Select(t => t.Describe())));
+    Check("контрольные адреса проверены с входа", seen.ForeignControl != null && seen.LocalControl != null);
 }
 
 Console.WriteLine("SSH через промежуточный сервер:");
