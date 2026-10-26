@@ -662,6 +662,7 @@ public sealed class MainViewModel : ObservableObject
     private void ShowError(Exception ex)
     {
         AppendLog("Ошибка: " + ex.Message);
+        if (ex is not MayakException) AppendLog(ex.ToString());
         _ui.Error(ex is MayakException ? ex.Message : $"{ex.Message}\n\n({ex.GetType().Name})");
     }
 

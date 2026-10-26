@@ -83,6 +83,9 @@ public sealed class SshConnection : IDisposable
             if (!check.Ok)
                 throw new MayakException($"Пользователь «{who}» не может выполнять sudo без пароля. Подключайтесь под root или добавьте в sudoers строку «{who} ALL=(ALL) NOPASSWD:ALL».");
         }
+
+        // Убираем временные файлы, оставшиеся от прерванных операций
+        Run("find ~ -maxdepth 1 -name '.mayak_*' -mmin +30 -delete 2>/dev/null", TimeSpan.FromSeconds(20));
     }
 
     private bool _hostKeyMismatch;
@@ -191,7 +194,7 @@ public sealed class SshConnection : IDisposable
         {
             sftp.UploadFile(ms, path, canOverride: true);
         }
-        sftp.ChangePermissions(path, 384); // 0600
+        sftp.ChangePermissions(path, 600); // SSH.NET ждёт восьмеричные цифры: 600 = rw-------
         return path;
     }
 

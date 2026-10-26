@@ -121,6 +121,7 @@ src/Mayak.Core/            ядро без интерфейса (можно пе
   Server/Scripts/            серверные скрипты (вшиты в сборку)
 src/MayakVPN/              WPF-приложение для Windows
 tests/Mayak.SelfTest/      самотест: векторы RFC 7748, формат vpn://, QR, конфиги
+tests/Mayak.IntegrationTest/  сквозной сценарий через SSH на локальном стенде (установка, пользователи, лимиты)
 tools/make_icon.py         генератор иконки
 ```
 
