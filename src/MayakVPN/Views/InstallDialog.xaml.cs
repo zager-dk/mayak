@@ -14,12 +14,19 @@ public partial class InstallDialog : Window
         InitializeComponent();
         HostText.Text = $"Сервер: {host}";
         PortBox.Text = InstallOptions.RandomPort().ToString();
+        SniBox.ItemsSource = XraySites.Suggestions;
+        SniBox.Text = Mayak.Core.Models.XrayDefaults.DefaultSni;
         if (reinstall)
         {
             Header.Text = "Переустановка VPN";
             ReinstallWarning.Visibility = Visibility.Visible;
             OkButton.Content = "Переустановить";
         }
+    }
+
+    private void XrayToggled(object sender, RoutedEventArgs e)
+    {
+        if (XrayPanel != null) XrayPanel.IsEnabled = XrayCheck.IsChecked == true;
     }
 
     private void NewPort(object sender, RoutedEventArgs e) => PortBox.Text = InstallOptions.RandomPort().ToString();
@@ -47,8 +54,26 @@ public partial class InstallDialog : Window
             return;
         }
 
+        int xrayPort = 443;
+        var sni = SniBox.Text.Trim();
+        if (XrayCheck.IsChecked == true)
+        {
+            if (!int.TryParse(XrayPortBox.Text.Trim(), out xrayPort) || xrayPort is < 1 or > 65535)
+            {
+                Warn("Порт Xray должен быть числом от 1 до 65535.");
+                return;
+            }
+            if (!XraySites.IsValidHost(sni))
+            {
+                Warn("Укажите домен сайта для маскировки, например www.googletagmanager.com.");
+                return;
+            }
+        }
+
         Result = new InstallOptions
         {
+            InstallXray = XrayCheck.IsChecked == true,
+            Xray = new XrayInstallOptions { Port = xrayPort, Sni = sni },
             Port = port,
             Version = V3.IsChecked == true ? AwgProtocolVersion.V3 : AwgProtocolVersion.V2,
             Dns1 = Dns1Box.Text.Trim(),

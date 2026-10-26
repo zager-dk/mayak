@@ -45,6 +45,12 @@ public partial class MainWindow : Window, IUi
         return dlg.ShowDialog() == true ? dlg.Result : null;
     }
 
+    public XrayInstallOptions? AskXrayInstall(bool reinstall, XrayEndpoint? current)
+    {
+        var dlg = new XrayDialog(reinstall, current) { Owner = this };
+        return dlg.ShowDialog() == true ? dlg.Result : null;
+    }
+
     public UserEditResult? EditUser(string title, VpnUser? existing)
     {
         var dlg = new UserDialog(title, existing) { Owner = this };

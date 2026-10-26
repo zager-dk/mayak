@@ -6,6 +6,7 @@ using System.Windows.Media.Imaging;
 using Mayak.Core.Export;
 using Mayak.Core.Models;
 using Mayak.Core.Server;
+using Mayak.Core.Xray;
 
 namespace MayakVPN.Views;
 
@@ -17,6 +18,7 @@ public partial class ShareWindow : Window
     private readonly string _vpnKey;
     private readonly string _confText;
     private readonly IReadOnlyList<string> _amneziaQr;
+    private readonly string? _vlessLink;
     private IReadOnlyList<string> _currentQr = Array.Empty<string>();
     private int _qrIndex;
     private string? _savedFile;
@@ -30,9 +32,24 @@ public partial class ShareWindow : Window
 
         var db = snap.Db;
         var title = $"{db.ServerTitle} · {user.Name}";
-        _vpnKey = ClientConfigFactory.BuildVpnKey(snap.Endpoint, device, db.Dns1, db.Dns2, title);
+        var xray = string.IsNullOrEmpty(device.XrayId) ? null : snap.Xray;
+        _vpnKey = ClientConfigFactory.BuildVpnKey(snap.Endpoint, device, db.Dns1, db.Dns2, title, xray);
         _confText = ClientConfigFactory.BuildConfFile(snap.Endpoint, device, db.Dns1, db.Dns2);
-        _amneziaQr = ClientConfigFactory.BuildAmneziaQrChunks(snap.Endpoint, device, db.Dns1, db.Dns2, title);
+        _amneziaQr = ClientConfigFactory.BuildAmneziaQrChunks(snap.Endpoint, device, db.Dns1, db.Dns2, title, xray);
+        _vlessLink = xray == null ? null : XrayConfig.BuildVlessLink(snap.Endpoint.Host, xray, device.XrayId, $"{db.ServerTitle} · {user.Name} · {device.Name}");
+
+        if (xray != null)
+        {
+            ProtocolsText.Text =
+                $"Файл .vpn содержит два протокола: AmneziaWG и Xray ({xray.Title}). В AmneziaVPN между ними можно переключаться, если один перестанет работать.\n" +
+                "Файл .conf и QR «.conf» — только AmneziaWG. Ссылка vless:// — только Xray, для приложений v2RayTun, Happ, Streisand, Hiddify.";
+        }
+        else
+        {
+            ProtocolsText.Text = "Только AmneziaWG. Установите Xray на вкладке «Сервер», чтобы у пользователей появился запасной протокол.";
+            CopyVlessButton.Visibility = Visibility.Collapsed;
+            QrVless.Visibility = Visibility.Collapsed;
+        }
 
         Header.Text = $"Доступ: {user.Name} — {device.Name}";
         SubHeader.Text = $"{device.Kind.Title()} · IP в VPN {device.Ip} · AmneziaWG {snap.Endpoint.Parameters.ProtocolVersionString} · сервер {snap.Endpoint.Host}:{snap.Endpoint.Port}";
@@ -82,7 +99,7 @@ public partial class ShareWindow : Window
             "   Или в приложении выберите добавление по QR-коду и отсканируйте код справа.\n" +
             "3. Разрешите создание VPN-подключения и нажмите «Подключиться».",
         DeviceKind.IPhone =>
-            "1. Установите AmneziaWG (или AmneziaVPN) из App Store.\n" +
+            "1. Установите AmneziaWG (или AmneziaVPN, чтобы были оба протокола — тогда отправьте файл .vpn) из App Store.\n" +
             "2. Перешлите на iPhone файл .conf (AirDrop, Telegram, почта) → «Поделиться» → AmneziaWG.\n" +
             "   Или в AmneziaWG: «+» → «Создать из QR-кода» и отсканируйте код справа (режим «.conf»).\n" +
             "3. Разрешите добавление конфигурации VPN и включите туннель.",
@@ -103,12 +120,23 @@ public partial class ShareWindow : Window
     private void QrModeChanged(object sender, RoutedEventArgs e)
     {
         if (QrImage == null) return;
-        _currentQr = QrConf.IsChecked == true ? new[] { _confText } : _amneziaQr;
-        QrHint.Text = QrConf.IsChecked == true
-            ? "Сканируйте в AmneziaWG (iPhone, Mac, Android)."
-            : _amneziaQr.Count > 1
+        if (QrVless.IsChecked == true && _vlessLink != null)
+        {
+            _currentQr = new[] { _vlessLink };
+            QrHint.Text = "Сканируйте в v2RayTun, Happ, Streisand или Hiddify (только Xray).";
+        }
+        else if (QrConf.IsChecked == true)
+        {
+            _currentQr = new[] { _confText };
+            QrHint.Text = "Сканируйте в AmneziaWG (iPhone, Mac, Android) — только AmneziaWG.";
+        }
+        else
+        {
+            _currentQr = _amneziaQr;
+            QrHint.Text = _amneziaQr.Count > 1
                 ? "Сканируйте в AmneziaVPN все коды по очереди — приложение соберёт их само."
                 : "Сканируйте в AmneziaVPN.";
+        }
         _qrIndex = 0;
         ShowQr();
     }
@@ -158,6 +186,11 @@ public partial class ShareWindow : Window
     private void CopyKey(object sender, RoutedEventArgs e) => Copy(_vpnKey, "Ключ vpn:// скопирован.");
 
     private void CopyConf(object sender, RoutedEventArgs e) => Copy(_confText, "Текст .conf скопирован.");
+
+    private void CopyVless(object sender, RoutedEventArgs e)
+    {
+        if (_vlessLink != null) Copy(_vlessLink, "Ссылка vless:// скопирована.");
+    }
 
     private void Copy(string text, string done)
     {

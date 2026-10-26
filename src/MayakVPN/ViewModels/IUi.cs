@@ -13,6 +13,7 @@ public interface IUi
 {
     ServerProfile? EditServer(ServerProfile? existing);
     InstallOptions? AskInstall(bool reinstall, string host);
+    XrayInstallOptions? AskXrayInstall(bool reinstall, XrayEndpoint? current);
     UserEditResult? EditUser(string title, VpnUser? existing);
     DeviceEditResult? EditDevice(string title, VpnDevice? existing, string userName, int defaultDown, int defaultUp);
     void ShowShare(ServerSnapshot snap, VpnUser user, VpnDevice device, string exportFolder);

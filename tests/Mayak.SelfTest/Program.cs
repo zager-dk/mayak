@@ -5,6 +5,8 @@ using Mayak.Core.Crypto;
 using Mayak.Core.Export;
 using Mayak.Core.Models;
 using Mayak.Core.Server;
+using Mayak.Core.Probe;
+using Mayak.Core.Xray;
 
 // Самотест ядра Маяка: dotnet run --project tests/Mayak.SelfTest [папка для примеров]
 int failed = 0, passed = 0;
@@ -37,6 +39,43 @@ Console.WriteLine("X25519 (RFC 7748):");
 
     var (priv, pub) = Curve25519.GenerateKeyPair();
     Check("генерация пары ключей", Convert.FromBase64String(priv).Length == 32 && Curve25519.PublicKeyFromPrivate(priv) == pub);
+}
+
+
+Console.WriteLine("BLAKE2s / ChaCha20-Poly1305:");
+{
+    string H(byte[] b) => Convert.ToHexString(b).ToLowerInvariant();
+    var A = System.Text.Encoding.ASCII;
+    Check("BLAKE2s(\"abc\")", H(Blake2s.Hash256(A.GetBytes("abc"))) == "508c5e8c327c14e2e1a72ba34eeb452f37458b209ed63a294d999b4c86675982");
+    Check("BLAKE2s(пусто)", H(Blake2s.Hash256(Array.Empty<byte>())) == "69217a3079908094e11121d042354a7c1f55b6482ca1a51e1b250dfd1ed0eef9");
+    Check("BLAKE2s 64 байта (ровно блок)", H(Blake2s.Hash256(Enumerable.Range(0, 64).Select(i => (byte)i).ToArray())) == "56f34e8b96557e90c1f24b52d0c89d51086acf1b00f634cf1dde9233b8eaaa3e");
+    var hw = A.GetBytes(string.Concat(Enumerable.Repeat("hello world", 20)));
+    Check("BLAKE2s с ключом, 16 байт", H(Blake2s.Hash(16, A.GetBytes(new string('k', 32)), hw)) == "03e1250dc5725a455670650a2ee16b0c");
+    Check("BLAKE2s с коротким ключом", H(Blake2s.Hash(16, A.GetBytes("mac1key"), Enumerable.Range(0, 200).Select(i => (byte)i).ToArray())) == "544a7aefe21239c393f8fc31305e6b1a");
+
+    bool aeadOk = true;
+    for (int i = 0; i < 50 && aeadOk; i++)
+    {
+        var key = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
+        var nonce = ChaChaPoly.Nonce((ulong)i * 977);
+        var pt = System.Security.Cryptography.RandomNumberGenerator.GetBytes(i * 37);
+        var aad = System.Security.Cryptography.RandomNumberGenerator.GetBytes(i % 3 * 17);
+        var mine = ChaChaPoly.Seal(key, nonce, pt, aad);
+        if (System.Security.Cryptography.ChaCha20Poly1305.IsSupported)
+        {
+            using var reference = new System.Security.Cryptography.ChaCha20Poly1305(key);
+            var ct = new byte[pt.Length]; var tag = new byte[16];
+            reference.Encrypt(nonce, pt, ct, tag, aad);
+            aeadOk &= mine.SequenceEqual(ct.Concat(tag));
+        }
+        aeadOk &= ChaChaPoly.Open(key, nonce, mine, aad)?.SequenceEqual(pt) == true;
+        mine[0] ^= 1;
+        aeadOk &= mine.Length == 16 || ChaChaPoly.Open(key, nonce, mine, aad) == null;
+    }
+    Check($"ChaCha20-Poly1305 совпадает с .NET (эталон доступен: {System.Security.Cryptography.ChaCha20Poly1305.IsSupported})", aeadOk);
+
+    var sig = AwgProbe.Obfuscation.SignaturePacket(AwgParameters.DefaultSpecialJunk1);
+    Check("пакет I1 по умолчанию: 2 случайных байта + DNS-ответ", sig.Length == 2 + 42 && sig[2] == 0x85 && sig[3] == 0x80);
 }
 
 Console.WriteLine("Параметры AWG:");
@@ -159,10 +198,42 @@ var device = new VpnDevice { Name = "iPhone", Kind = DeviceKind.IPhone, PrivateK
     }
 }
 
-Console.WriteLine("Скрипты в сборке:");
-foreach (var s in new[] { "install_docker.sh", "prepare_host.sh", "Dockerfile", "start.sh", "mayak_tc.sh" })
+
+Console.WriteLine("Xray:");
 {
-    var text = ScriptLibrary.Load(s, new Dictionary<string, string> { ["SUDO"] = "", ["DOCKERFILE_FOLDER"] = "/x", ["SUBNET_IP"] = "10.8.1.0", ["SUBNET_CIDR"] = "24" });
+    var ep = new XrayEndpoint { Port = 443, PublicKey = "PUBKEYxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", ShortId = "a1b2c3d4e5f60718", Sni = "www.googletagmanager.com", XhttpPath = "/abc123", XhttpHost = "www.googletagmanager.com" };
+    var id = Guid.NewGuid().ToString();
+    var serverJson = XrayConfig.BuildServerJson(ep, "PRIVKEY", new[] { new XrayConfig.Client("owner-uuid", "", ""), new XrayConfig.Client(id, "mayak:dev", "") });
+    var parsed = XrayConfig.ParseServerJson(serverJson, ep.PublicKey);
+    Check("server.json: разбор порта, SNI, пути, shortId", parsed.Port == 443 && parsed.Sni == ep.Sni && parsed.XhttpPath == "/abc123" && parsed.ShortId == ep.ShortId && parsed.Transport == "xhttp");
+    var clients = XrayConfig.ReadClients(serverJson);
+    Check("server.json: клиенты и email", clients.Count == 2 && clients[1].Email == "mayak:dev" && clients[0].Email == "");
+    var replaced = XrayConfig.ReadClients(XrayConfig.ReplaceClients(serverJson, new[] { new XrayConfig.Client(id, "mayak:dev", "") }));
+    Check("server.json: замена клиентов", replaced.Count == 1 && replaced[0].Id == id);
+
+    var client = JsonNode.Parse(XrayConfig.BuildClientJson("203.0.113.10", ep, id))!;
+    var ob = client["outbounds"]![0]!;
+    Check("клиент: VLESS → адрес, порт, UUID", ob["settings"]!["vnext"]![0]!["address"]!.GetValue<string>() == "203.0.113.10" && ob["settings"]!["vnext"]![0]!["users"]![0]!["id"]!.GetValue<string>() == id);
+    Check("клиент: Reality publicKey/shortId/SNI, xhttp", ob["streamSettings"]!["realitySettings"]!["publicKey"]!.GetValue<string>() == ep.PublicKey && ob["streamSettings"]!["network"]!.GetValue<string>() == "xhttp" && ob["streamSettings"]!["xhttpSettings"]!["path"]!.GetValue<string>() == "/abc123");
+    Check("клиент: SOCKS на 127.0.0.1:10808", client["inbounds"]![0]!["listen"]!.GetValue<string>() == "127.0.0.1" && client["inbounds"]![0]!["port"]!.GetValue<int>() == 10808);
+
+    var link = XrayConfig.BuildVlessLink("203.0.113.10", ep, id, "Иван iPhone");
+    Check("ссылка vless://", link.StartsWith($"vless://{id}@203.0.113.10:443?") && link.Contains("security=reality") && link.Contains("type=xhttp") && link.Contains("path=%2Fabc123") && link.Contains("pbk="));
+
+    var dev = new VpnDevice { Name = "Тест", Kind = DeviceKind.Android, PrivateKey = cPriv, PublicKey = cPub, Ip = "10.8.1.2", XrayId = id };
+    var both = JsonNode.Parse(VpnKeyCodec.Decode(ClientConfigFactory.BuildVpnKey(endpoint, dev, "1.1.1.1", "1.0.0.1", "Маяк VPN", ep)))!;
+    var containers = both["containers"]!.AsArray();
+    var xrayLast = JsonNode.Parse(containers[1]!["xray"]!["last_config"]!.GetValue<string>())!;
+    Check("vpn://: два протокола (awg2 + xray)", containers.Count == 2 && containers[1]!["container"]!.GetValue<string>() == "amnezia-xray" && both["defaultContainer"]!.GetValue<string>() == "amnezia-awg2");
+    Check("vpn://: last_config Xray с UUID устройства", xrayLast["outbounds"]![0]!["settings"]!["vnext"]![0]!["users"]![0]!["id"]!.GetValue<string>() == id);
+    var noXray = JsonNode.Parse(VpnKeyCodec.Decode(ClientConfigFactory.BuildVpnKey(endpoint, dev, "1.1.1.1", "1.0.0.1", "Маяк VPN")))!;
+    Check("vpn:// без Xray — один протокол", noXray["containers"]!.AsArray().Count == 1);
+}
+
+Console.WriteLine("Скрипты в сборке:");
+foreach (var s in new[] { "install_docker.sh", "prepare_host.sh", "Dockerfile", "start.sh", "mayak_tc.sh", "xray.Dockerfile", "xray_start.sh", "xray_configure.sh" })
+{
+    var text = ScriptLibrary.Load(s, new Dictionary<string, string> { ["SUDO"] = "", ["DOCKERFILE_FOLDER"] = "/x", ["SUBNET_IP"] = "10.8.1.0", ["SUBNET_CIDR"] = "24", ["XRAY_PORT"] = "443", ["XRAY_RELEASE"] = "v1", ["XRAY_SHA256"] = "x" });
     Check(s, text.Length > 50 && !text.Contains("{{") && !text.Contains('\r'));
 }
 

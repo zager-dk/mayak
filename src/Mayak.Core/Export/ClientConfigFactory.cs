@@ -3,6 +3,7 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Mayak.Core.Models;
+using Mayak.Core.Xray;
 
 namespace Mayak.Core.Export;
 
@@ -44,7 +45,7 @@ public static class ClientConfigFactory
         BuildNativeConfig(server, device, dns1, dns2, device.Kind.Mtu());
 
     /// <summary>JSON сервера в формате AmneziaVPN (то, что лежит внутри vpn://).</summary>
-    public static string BuildAmneziaJson(ServerEndpoint server, VpnDevice device, string dns1, string dns2, string description)
+    public static string BuildAmneziaJson(ServerEndpoint server, VpnDevice device, string dns1, string dns2, string description, XrayEndpoint? xray = null)
     {
         EnsureExportable(device);
         var p = server.Parameters;
@@ -79,13 +80,17 @@ public static class ClientConfigFactory
             awg[k] = v;
         awg["last_config"] = lastConfig.ToJsonString(new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
 
+        var containers = new JsonArray(new JsonObject
+        {
+            ["awg"] = awg,
+            ["container"] = ContainerName,
+        });
+        if (xray != null && !string.IsNullOrEmpty(device.XrayId))
+            containers.Add(XrayConfig.BuildAmneziaContainer(server.Host, xray, device.XrayId));
+
         var root = new JsonObject
         {
-            ["containers"] = new JsonArray(new JsonObject
-            {
-                ["awg"] = awg,
-                ["container"] = ContainerName,
-            }),
+            ["containers"] = containers,
             ["defaultContainer"] = ContainerName,
             ["description"] = description,
             ["dns1"] = dns1,
@@ -96,12 +101,12 @@ public static class ClientConfigFactory
     }
 
     /// <summary>Ключ vpn:// — его же сохраняем в файл .vpn.</summary>
-    public static string BuildVpnKey(ServerEndpoint server, VpnDevice device, string dns1, string dns2, string description) =>
-        VpnKeyCodec.Encode(BuildAmneziaJson(server, device, dns1, dns2, description));
+    public static string BuildVpnKey(ServerEndpoint server, VpnDevice device, string dns1, string dns2, string description, XrayEndpoint? xray = null) =>
+        VpnKeyCodec.Encode(BuildAmneziaJson(server, device, dns1, dns2, description, xray));
 
     /// <summary>Набор QR-кодов, которые сканирует приложение AmneziaVPN.</summary>
-    public static IReadOnlyList<string> BuildAmneziaQrChunks(ServerEndpoint server, VpnDevice device, string dns1, string dns2, string description) =>
-        VpnKeyCodec.AmneziaQrChunks(BuildAmneziaJson(server, device, dns1, dns2, description));
+    public static IReadOnlyList<string> BuildAmneziaQrChunks(ServerEndpoint server, VpnDevice device, string dns1, string dns2, string description, XrayEndpoint? xray = null) =>
+        VpnKeyCodec.AmneziaQrChunks(BuildAmneziaJson(server, device, dns1, dns2, description, xray));
 
     /// <summary>Имя файла: для .vpn — читаемое, для .conf — латиница до 15 символов (требование WireGuard к имени туннеля).</summary>
     public static string SuggestFileName(string userName, VpnDevice device, ConfigFormat format)

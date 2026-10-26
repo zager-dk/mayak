@@ -64,6 +64,30 @@
         </Grid>
         <TextBlock Style="{StaticResource Hint}" Text="35 Мбит/с с запасом хватает на YouTube в 4K (ему нужно около 20–25)." />
 
+        <Border Background="{StaticResource Card}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6" Padding="12,10" Margin="0,14,0,0">
+            <StackPanel>
+                <CheckBox x:Name="XrayCheck" IsChecked="True" Checked="XrayToggled" Unchecked="XrayToggled">
+                    <TextBlock Text="Также установить Xray (VLESS + Reality + XHTTP) — запасной протокол" FontWeight="SemiBold" TextWrapping="Wrap" />
+                </CheckBox>
+                <TextBlock Style="{StaticResource Hint}" Text="Работает поверх TCP и выглядит как обычный HTTPS-сайт. Если AmneziaWG начнут резать, пользователь переключится на Xray в том же приложении AmneziaVPN." />
+                <Grid x:Name="XrayPanel" Margin="0,4,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="110" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource FieldLabel}" Text="TCP-порт" />
+                        <TextBox x:Name="XrayPortBox" Text="443" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Style="{StaticResource FieldLabel}" Text="Сайт для маскировки Reality" />
+                        <ComboBox x:Name="SniBox" IsEditable="True" />
+                    </StackPanel>
+                </Grid>
+            </StackPanel>
+        </Border>
+
         <Border x:Name="ReinstallWarning" Background="#FDECEC" BorderBrush="#F2B8B8" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,14,0,0" Visibility="Collapsed">
             <TextBlock TextWrapping="Wrap" Foreground="#8A1F1F"
                        Text="Текущий VPN-контейнер будет удалён вместе с ключами. Список пользователей Маяка тоже начнётся заново." />

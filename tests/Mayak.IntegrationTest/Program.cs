@@ -3,6 +3,7 @@ using Mayak.Core.Awg;
 using Mayak.Core.Export;
 using Mayak.Core.Models;
 using Mayak.Core.Server;
+using Mayak.Core.Xray;
 
 // Сквозной тест MayakServer через настоящий SSH на локальном стенде.
 // Стенд: тестовый SSH/SFTP-сервер на 127.0.0.1:2222 (root/test) и заглушки docker/awg/tc в PATH,
@@ -108,6 +109,56 @@ Check(".conf совпадает с сервером по H1–H4 и S1–S4",
     new[] { "H1", "H2", "H3", "H4", "S1", "S2", "S3", "S4", "Jc" }.All(k => conf.GetInterfaceValue(k) == serverConf.GetInterfaceValue(k)));
 Check("PSK клиента совпадает с пиром на сервере",
     serverConf.Peers.Single(p => p.PublicKey == dev.PublicKey).PresharedKey == conf.Sections[1].Get("PresharedKey"));
+
+
+Console.WriteLine("Xray:");
+const string XrayRoot = "/root/fakexray";
+server.InstallXray(snap, new XrayInstallOptions { Port = 443, Sni = "www.microsoft.com" }, reinstall: false);
+snap = server.Load();
+Check("Xray установлен и прочитан", snap.Xray != null && snap.Xray.Sni == "www.microsoft.com" && snap.Xray.Transport == "xhttp" && snap.Xray.PublicKey.Length > 20);
+var xjson = File.ReadAllText(XrayRoot + MayakServer.XrayServerJson);
+var xclients = XrayConfig.ReadClients(xjson);
+var ivanDevices = snap.Db.Users.Single().Devices;
+Check("у каждого устройства свой UUID Xray", ivanDevices.All(d => d.XrayId.Length == 36) && ivanDevices.Select(d => d.XrayId).Distinct().Count() == ivanDevices.Count);
+Check("server.json: устройства Маяка + учётка владельца Amnezia", ivanDevices.All(d => xclients.Any(c => c.Id == d.XrayId && c.Email.StartsWith("mayak:"))) && xclients.Any(c => c.Email == ""));
+var xstart = File.ReadAllText(XrayRoot + "/opt/amnezia/start.sh");
+Check("start.sh Xray с портом 443, start.sh AWG не тронут", xstart.Contains("--dport 443") && File.ReadAllText("/opt/amnezia/start.sh").Contains("awg-quick"));
+
+var macDev = ivanDevices.Single(d => d.Name == "Mac");
+server.SetDeviceEnabled(snap, snap.Db.Users.Single(), macDev, false);
+xclients = XrayConfig.ReadClients(File.ReadAllText(XrayRoot + MayakServer.XrayServerJson));
+Check("приостановка убирает UUID из Xray", xclients.All(c => c.Id != macDev.XrayId));
+server.SetDeviceEnabled(snap, snap.Db.Users.Single(), macDev, true);
+xclients = XrayConfig.ReadClients(File.ReadAllText(XrayRoot + MayakServer.XrayServerJson));
+Check("включение возвращает UUID", xclients.Any(c => c.Id == macDev.XrayId));
+
+// клиент, выданный из AmneziaVPN, должен сохраниться
+var withForeign = XrayConfig.ReplaceClients(File.ReadAllText(XrayRoot + MayakServer.XrayServerJson),
+    xclients.Append(new XrayConfig.Client("11111111-2222-3333-4444-555555555555", "", "")));
+File.WriteAllText(XrayRoot + MayakServer.XrayServerJson, withForeign);
+var newUser = new VpnUser { Name = "Ольга" };
+snap.Db.Users.Add(newUser);
+var olgaPhone = server.AddDevice(snap, newUser, "Android", DeviceKind.Android, 35, 35);
+xclients = XrayConfig.ReadClients(File.ReadAllText(XrayRoot + MayakServer.XrayServerJson));
+Check("новое устройство сразу получает Xray", olgaPhone.XrayId.Length == 36 && xclients.Any(c => c.Id == olgaPhone.XrayId));
+Check("чужой клиент Xray сохранён", xclients.Any(c => c.Id == "11111111-2222-3333-4444-555555555555"));
+
+var keyX = JsonNode.Parse(VpnKeyCodec.Decode(ClientConfigFactory.BuildVpnKey(snap.Endpoint, olgaPhone, snap.Db.Dns1, snap.Db.Dns2, "Маяк VPN", snap.Xray)))!;
+var lastX = JsonNode.Parse(keyX["containers"]![1]!["xray"]!["last_config"]!.GetValue<string>())!;
+var realityX = lastX["outbounds"]![0]!["streamSettings"]!["realitySettings"]!;
+Check("ключ: Reality-ключ и shortId совпадают с сервером",
+    realityX["publicKey"]!.GetValue<string>() == File.ReadAllText(XrayRoot + "/opt/amnezia/xray/xray_public.key").Trim()
+    && realityX["shortId"]!.GetValue<string>() == File.ReadAllText(XrayRoot + "/opt/amnezia/xray/xray_short_id.key").Trim());
+
+Console.WriteLine("Проверочная учётка:");
+var probe = server.EnsureProbe(snap);
+snap = server.Load();
+Check("служебный пир AWG создан и не виден как «чужой»", snap.PeersOnServer.Contains(probe.AwgPublicKey) && snap.Foreign.Count == 0);
+Check("служебный клиент Xray добавлен", XrayConfig.ReadClients(File.ReadAllText(XrayRoot + MayakServer.XrayServerJson)).Any(c => c.Id == probe.XrayId && c.Email == "mayak:probe"));
+Check("служебная учётка не попала в clientsTable и лимиты", !File.ReadAllText(MayakServer.ClientsTablePath).Contains(probe.AwgPublicKey) && !File.ReadAllText(MayakServer.LimitsPath).Contains(probe.AwgIp + " "));
+var probe2 = server.EnsureProbe(snap);
+Check("повторный вызов не плодит учётки", probe2.AwgPublicKey == probe.AwgPublicKey && probe2.XrayId == probe.XrayId);
+Check("адрес клиента виден сервером", server.GetClientAddress() == "127.0.0.1");
 
 Console.WriteLine("Протокол 3.1:");
 server.Install(new InstallOptions { Port = 41235, Version = AwgProtocolVersion.V3 }, reinstall: true);

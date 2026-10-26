@@ -61,6 +61,9 @@ public sealed class MayakDatabase
 
     public List<VpnUser> Users { get; set; } = new();
 
+    /// <summary>Служебная учётка для встроенной проверки протоколов (не показывается в списке пользователей).</summary>
+    public ProbeIdentity? Probe { get; set; }
+
     [JsonIgnore]
     public IEnumerable<VpnDevice> AllDevices => Users.SelectMany(u => u.Devices);
 
@@ -89,6 +92,9 @@ public sealed class VpnDevice
     public string Ip { get; set; } = "";
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public bool Enabled { get; set; } = true;
+
+    /// <summary>UUID клиента Xray (VLESS). Пусто — Xray для устройства не выдан.</summary>
+    public string XrayId { get; set; } = "";
 
     /// <summary>Лимит скачивания, Мбит/с. 0 — без ограничения.</summary>
     public int DownMbps { get; set; }
@@ -129,4 +135,45 @@ public sealed class ForeignPeer
     public string PublicKey { get; set; } = "";
     public string Ip { get; set; } = "";
     public string Name { get; set; } = "";
+}
+
+/// <summary>Ключи служебной «проверочной» учётки Маяка.</summary>
+public sealed class ProbeIdentity
+{
+    public string AwgPrivateKey { get; set; } = "";
+    public string AwgPublicKey { get; set; } = "";
+    public string AwgIp { get; set; } = "";
+    public string XrayId { get; set; } = "";
+}
+
+/// <summary>Параметры Xray (VLESS + Reality), прочитанные с сервера.</summary>
+public sealed class XrayEndpoint
+{
+    public int Port { get; set; } = 443;
+    public string PublicKey { get; set; } = "";
+    public string ShortId { get; set; } = "";
+    /// <summary>Сайт-маскировка Reality (SNI).</summary>
+    public string Sni { get; set; } = XrayDefaults.DefaultSni;
+    /// <summary>xhttp или raw (tcp).</summary>
+    public string Transport { get; set; } = "xhttp";
+    public string XhttpPath { get; set; } = "/";
+    public string XhttpHost { get; set; } = "";
+    public string XhttpMode { get; set; } = "auto";
+    /// <summary>xtls-rprx-vision для raw, пусто для xhttp.</summary>
+    public string Flow { get; set; } = "";
+    public string Fingerprint { get; set; } = "chrome";
+
+    public string Title => Transport == "xhttp" ? "VLESS + Reality + XHTTP" : "VLESS + Reality";
+}
+
+public static class XrayDefaults
+{
+    /// <summary>Версия Xray-core — та же, что закреплена в AmneziaVPN.</summary>
+    public const string Release = "v26.7.28";
+    /// <summary>SHA-256 Xray-linux-64.zip из официального релиза (файл .dgst).</summary>
+    public const string LinuxZipSha256 = "8195d909f1109b8f3d99eefe401a3c451d7bf4af71f24d3815420f77e5dd2a40";
+    /// <summary>SHA-256 Xray-windows-64.zip из официального релиза (файл .dgst).</summary>
+    public const string WindowsZipSha256 = "c7172078fca4711bcd92a4774dcd1822544579c58816197575c47533317fd8d1";
+    public const string DefaultSni = "www.googletagmanager.com";
+    public const int DefaultPort = 443;
 }

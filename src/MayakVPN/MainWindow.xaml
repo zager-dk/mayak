@@ -245,6 +245,7 @@
                                             </DataGridTemplateColumn>
                                             <DataGridTextColumn Header="Устройство" Binding="{Binding Name}" Width="*" MinWidth="110" />
                                             <DataGridTextColumn Header="Тип" Binding="{Binding Kind}" Width="80" />
+                                            <DataGridTextColumn Header="Протоколы" Binding="{Binding Protocols}" Width="90" />
                                             <DataGridTextColumn Header="Файл" Binding="{Binding FileFormat}" Width="55" />
                                             <DataGridTextColumn Header="IP в VPN" Binding="{Binding Ip}" Width="95" />
                                             <DataGridTextColumn Header="Лимит" Binding="{Binding Limit}" Width="140" />
@@ -312,6 +313,33 @@
                                         </TextBlock>
                                     </StackPanel>
                                 </Border>
+
+                                <Border Style="{StaticResource CardBorder}" Margin="0,16,0,0">
+                                    <StackPanel>
+                                        <TextBlock Style="{StaticResource H2}" Text="Xray — запасной протокол" />
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="130" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                            </Grid.RowDefinitions>
+                                            <TextBlock Text="Состояние" Foreground="{StaticResource Muted}" Margin="0,4" />
+                                            <TextBlock Grid.Column="1" Text="{Binding XrayStateText}" Margin="0,4" />
+                                            <TextBlock Grid.Row="1" Text="Параметры" Foreground="{StaticResource Muted}" Margin="0,4" />
+                                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding XrayEndpointText}" TextWrapping="Wrap" Margin="0,4" />
+                                        </Grid>
+                                        <WrapPanel Margin="0,8,0,0">
+                                            <Button Content="{Binding XrayButtonText}" Command="{Binding InstallXrayCommand}" Margin="0,0,8,8" />
+                                            <Button Style="{StaticResource DangerButton}" Content="Удалить Xray" Command="{Binding UninstallXrayCommand}" Margin="0,0,8,8" />
+                                        </WrapPanel>
+                                        <TextBlock Style="{StaticResource Hint}">
+                                            VLESS + Reality + XHTTP поверх TCP: трафик выглядит как обращение к обычному сайту. Попадает в файлы .vpn вторым протоколом. Лимиты скорости пока действуют только на AmneziaWG.
+                                        </TextBlock>
+                                    </StackPanel>
+                                </Border>
                             </StackPanel>
 
                             <Border Grid.Column="2" Style="{StaticResource CardBorder}" VerticalAlignment="Top">
@@ -353,6 +381,83 @@
                                 </StackPanel>
                             </Border>
                         </Grid>
+                    </ScrollViewer>
+                </TabItem>
+
+                <!-- ═════ Проверка ═════ -->
+                <TabItem Header="Проверка">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel>
+                            <Border Style="{StaticResource CardBorder}">
+                                <StackPanel>
+                                    <TextBlock Style="{StaticResource H2}" Text="Какие протоколы проходят из этой сети" />
+                                    <TextBlock Style="{StaticResource Hint}" FontSize="13" Margin="0,0,0,10">
+                                        Маяк подключается к вашему серверу прямо с этого компьютера каждым протоколом: AmneziaWG — рукопожатие и 400 пакетов через туннель, Xray — соединение через Reality и скачивание 30 МБ. Так видно и блокировку, и «заморозку», когда соединение есть, а данные обрываются.<LineBreak />
+                                        Перед проверкой выключите на компьютере любой другой VPN. Чтобы проверить мобильный интернет, раздайте его с телефона по Wi-Fi и подключите к нему компьютер.
+                                    </TextBlock>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Style="{StaticResource FieldLabel}" Margin="0,0,0,4" Text="Подпись сети для истории (необязательно), например «Дом, Ростелеком» или «МТС, мобильный»" />
+                                            <TextBox Text="{Binding CheckNetworkLabel, UpdateSourceTrigger=PropertyChanged}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Bottom" Margin="12,0,0,0">
+                                            <Button Style="{StaticResource PrimaryButton}" Content="Запустить проверку" Command="{Binding RunCheckCommand}" Padding="18,8" />
+                                            <Button Content="Остановить" Command="{Binding CancelCheckCommand}" Margin="0" Padding="12,8" />
+                                        </StackPanel>
+                                    </Grid>
+                                    <StackPanel Margin="0,12,0,0" Visibility="{Binding CheckRunning, Converter={StaticResource BoolVis}}">
+                                        <TextBlock Text="{Binding CheckProgress}" />
+                                        <ProgressBar IsIndeterminate="True" Height="4" Margin="0,8,0,0" Foreground="{StaticResource Amber}" BorderThickness="0" />
+                                    </StackPanel>
+                                    <TextBlock Margin="0,10,0,0" Foreground="{StaticResource Muted}" Visibility="{Binding CheckClientAddress, Converter={StaticResource NotEmptyVis}}">
+                                        <Run Text="Сервер видит этот компьютер с адреса " /><Run Text="{Binding CheckClientAddress, Mode=OneWay}" FontWeight="SemiBold" /><Run Text=". Если это не адрес вашего провайдера — на компьютере включён другой VPN, и результат не покажет реальную картину." />
+                                    </TextBlock>
+                                </StackPanel>
+                            </Border>
+
+                            <ItemsControl ItemsSource="{Binding CheckLines}" Margin="0,12,0,0">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Style="{StaticResource CardBorder}" Margin="0,0,0,10" Padding="16,12">
+                                            <DockPanel>
+                                                <Border DockPanel.Dock="Left" Width="34" Height="34" CornerRadius="17" Margin="0,0,14,0" VerticalAlignment="Top"
+                                                        Background="{Binding StatusKind, Converter={StaticResource StatusBrush}}">
+                                                    <TextBlock Text="{Binding Icon}" Foreground="White" FontWeight="Bold" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                </Border>
+                                                <StackPanel>
+                                                    <TextBlock>
+                                                        <Run Text="{Binding Protocol, Mode=OneWay}" FontWeight="SemiBold" FontSize="14.5" /><Run Text="  —  " Foreground="{StaticResource Muted}" /><Run Text="{Binding Summary, Mode=OneWay}" FontSize="14.5" />
+                                                    </TextBlock>
+                                                    <TextBlock Text="{Binding Details}" Style="{StaticResource Hint}" FontSize="12.5" Margin="0,6,0,0" />
+                                                </StackPanel>
+                                            </DockPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <Border Style="{StaticResource CardBorder}" Background="#FFF7E6" BorderBrush="#F3D39A" Padding="14,10" Margin="0,0,0,12"
+                                    Visibility="{Binding CheckRecommendation, Converter={StaticResource NotEmptyVis}}">
+                                <TextBlock Text="{Binding CheckRecommendation}" TextWrapping="Wrap" Foreground="#5C3B00" />
+                            </Border>
+
+                            <Border Style="{StaticResource CardBorder}" Padding="0">
+                                <StackPanel>
+                                    <TextBlock Style="{StaticResource H2}" Text="История проверок" Margin="16,12,16,8" />
+                                    <DataGrid ItemsSource="{Binding CheckHistory}" BorderThickness="0,1,0,0" MaxHeight="320">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Когда" Binding="{Binding When}" Width="95" />
+                                            <DataGridTextColumn Header="Сеть" Binding="{Binding Network}" Width="260" />
+                                            <DataGridTextColumn Header="Результат" Binding="{Binding Results}" Width="*" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
                     </ScrollViewer>
                 </TabItem>
 

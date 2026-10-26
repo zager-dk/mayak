@@ -26,6 +26,10 @@
                     </DockPanel>
                 </Border>
 
+                <Border Style="{StaticResource CardBorder}" Background="#EEF4FF" BorderBrush="#C7D7F5" Padding="14,10" Margin="0,12,0,0" x:Name="ProtocolsCard">
+                    <TextBlock x:Name="ProtocolsText" TextWrapping="Wrap" Foreground="#1E3A6E" />
+                </Border>
+
                 <Border Style="{StaticResource CardBorder}" Margin="0,12,0,0">
                     <StackPanel>
                         <TextBlock Style="{StaticResource H2}" Text="Как подключиться" />
@@ -41,6 +45,7 @@
                             <Button Content="Копировать текст .conf" Click="CopyConf" Margin="0,0,8,8" />
                             <Button Content="Сохранить .vpn как…" Click="SaveVpnAs" Margin="0,0,8,8" />
                             <Button Content="Сохранить .conf как…" Click="SaveConfAs" Margin="0,0,8,8" />
+                            <Button x:Name="CopyVlessButton" Content="Копировать ссылку vless://" Click="CopyVless" Margin="0,0,8,8" />
                         </WrapPanel>
                         <TextBlock Style="{StaticResource Hint}" Text="Ключ vpn:// можно отправить сообщением: в AmneziaVPN он вставляется через «Добавить» → «Вставить ключ». Это личный ключ — не публикуйте его." />
                     </StackPanel>
@@ -52,7 +57,8 @@
                     <TextBlock Style="{StaticResource H2}" Text="QR-код" />
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                         <RadioButton x:Name="QrAmnezia" Content="AmneziaVPN" Margin="0,0,16,0" Checked="QrModeChanged" />
-                        <RadioButton x:Name="QrConf" Content="AmneziaWG (.conf)" Checked="QrModeChanged" />
+                        <RadioButton x:Name="QrConf" Content=".conf" Margin="0,0,16,0" Checked="QrModeChanged" />
+                        <RadioButton x:Name="QrVless" Content="vless://" Checked="QrModeChanged" />
                     </StackPanel>
                     <Border Background="White" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6" Padding="8">
                         <Image x:Name="QrImage" Width="280" Height="280" RenderOptions.BitmapScalingMode="NearestNeighbor" />

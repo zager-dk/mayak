@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Threading;
 using Mayak.Core.Models;
+using Mayak.Core.Probe;
 using Mayak.Core.Server;
 using MayakVPN.Services;
 
@@ -49,6 +50,11 @@ public sealed class MainViewModel : ObservableObject
         RevokeForeignCommand = new RelayCommand(() => _ = RevokeForeignAsync(), () => !IsBusy && SelectedForeign != null);
         AdoptForeignCommand = new RelayCommand(() => _ = AdoptForeignAsync(), () => !IsBusy && SelectedForeign != null && Users.Count > 0);
 
+        InstallXrayCommand = new RelayCommand(() => _ = InstallXrayAsync(), () => !IsBusy && Snapshot != null);
+        UninstallXrayCommand = new RelayCommand(() => _ = UninstallXrayAsync(), () => !IsBusy && Snapshot?.Xray != null);
+        RunCheckCommand = new RelayCommand(() => _ = RunCheckAsync(), () => !IsBusy && !CheckRunning && Snapshot != null);
+        CancelCheckCommand = new RelayCommand(() => _checkCts?.Cancel(), () => CheckRunning);
+
         OpenExportFolderCommand = new RelayCommand(OpenExportFolder);
         ChangeExportFolderCommand = new RelayCommand(ChangeExportFolder);
         ClearLogCommand = new RelayCommand(() => LogLines.Clear());
@@ -87,6 +93,7 @@ public sealed class MainViewModel : ObservableObject
             {
                 _settings.LastServerId = value.Id;
                 SaveSettingsFile();
+                LoadCheckHistory();
                 _ = ReloadAsync();
             }
             OnPropertyChanged(nameof(HasServer));
@@ -106,8 +113,25 @@ public sealed class MainViewModel : ObservableObject
             OnPropertyChanged(nameof(EndpointText));
             OnPropertyChanged(nameof(ProtocolText));
             OnPropertyChanged(nameof(SummaryText));
+            OnPropertyChanged(nameof(XrayStateText));
+            OnPropertyChanged(nameof(XrayEndpointText));
+            OnPropertyChanged(nameof(XrayButtonText));
+            OnPropertyChanged(nameof(HasXray));
         }
     }
+
+    public bool HasXray => Snapshot?.Xray != null;
+
+    public string XrayStateText => Snapshot == null ? "—" : Snapshot.Xray != null ? "Работает" : Snapshot.XrayState switch
+    {
+        ServerState.Stopped => "Остановлен",
+        ServerState.Running => "Запущен, но не настроен",
+        _ => "Не установлен",
+    };
+
+    public string XrayEndpointText => Snapshot?.Xray is { } x ? $"{x.Title} · TCP {x.Port} · маскировка под {x.Sni}" : "—";
+
+    public string XrayButtonText => Snapshot?.Xray != null ? "Переустановить Xray…" : "Установить Xray…";
 
     private ServerState? _state;
     public ServerState? State
@@ -246,6 +270,10 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand ShareDeviceCommand { get; }
     public RelayCommand RevokeForeignCommand { get; }
     public RelayCommand AdoptForeignCommand { get; }
+    public RelayCommand InstallXrayCommand { get; }
+    public RelayCommand UninstallXrayCommand { get; }
+    public RelayCommand RunCheckCommand { get; }
+    public RelayCommand CancelCheckCommand { get; }
     public RelayCommand OpenExportFolderCommand { get; }
     public RelayCommand ChangeExportFolderCommand { get; }
     public RelayCommand ClearLogCommand { get; }
@@ -465,9 +493,29 @@ public sealed class MainViewModel : ObservableObject
         if (opt == null) return;
 
         AppendLog($"=== Установка VPN на {SelectedServer.Host} ===");
-        var ok = await RunAsync("Установка VPN на сервер…", s => s.Install(opt, reinstall, step => Ui(() => BusyText = step + "…")), reload: true);
+        string? xrayError = null;
+        var ok = await RunAsync("Установка VPN на сервер…", s =>
+        {
+            s.Install(opt, reinstall, step => Ui(() => BusyText = step + "…"));
+            if (opt.InstallXray)
+            {
+                try
+                {
+                    var snap = s.Load();
+                    s.InstallXray(snap, opt.Xray, reinstall: true, step => Ui(() => BusyText = "Xray: " + step + "…"));
+                }
+                catch (Exception ex)
+                {
+                    xrayError = ex.Message;
+                }
+            }
+        }, reload: true);
         if (ok)
-            _ui.Info($"VPN установлен.\n\nПорт: UDP {opt.Port}. Если у хостинга есть внешний файрвол (панель управления), откройте в нём этот порт.\n\nТеперь добавьте пользователей и их устройства.");
+        {
+            var ports = $"UDP {opt.Port} (AmneziaWG)" + (opt.InstallXray && xrayError == null ? $" и TCP {opt.Xray.Port} (Xray)" : "");
+            var xrayNote = xrayError == null ? "" : $"\n\nXray установить не удалось: {xrayError}\nAmneziaWG работает; Xray можно поставить позже на вкладке «Сервер».";
+            _ui.Info($"VPN установлен.\n\nПорты: {ports}. Если у хостинга есть внешний файрвол (панель управления), откройте в нём эти порты.{xrayNote}\n\nТеперь добавьте пользователей и их устройства.");
+        }
     }
 
     private async Task UninstallAsync()
@@ -497,6 +545,111 @@ public sealed class MainViewModel : ObservableObject
         }
         await RunAsync("Сохранение настроек…", s => s.Save(snap), reload: true);
         AppendLog("Новые DNS и адрес сервера попадут в файлы, которые вы выдадите после этого изменения.");
+    }
+
+    private async Task InstallXrayAsync()
+    {
+        var snap = Snapshot;
+        if (snap == null) return;
+        bool reinstall = snap.Xray != null || snap.XrayState != ServerState.DockerOnly;
+        var opt = _ui.AskXrayInstall(reinstall, snap.Xray);
+        if (opt == null) return;
+        var ok = await RunAsync("Установка Xray…", s => s.InstallXray(snap, opt, reinstall, step => Ui(() => BusyText = step + "…")), reload: true);
+        if (ok)
+            _ui.Info($"Xray установлен (TCP-порт {opt.Port}).\n\nОткройте этот порт в файрволе хостинга, если он есть. Чтобы у пользователей появился второй протокол, выдайте им файлы .vpn заново (кнопка «Выдать файл / QR»).");
+    }
+
+    private async Task UninstallXrayAsync()
+    {
+        var snap = Snapshot;
+        if (snap == null) return;
+        if (!_ui.Confirm("Удалить Xray с сервера? AmneziaWG продолжит работать.", "Удаление Xray", danger: true)) return;
+        await RunAsync("Удаление Xray…", s => s.UninstallXray(snap), reload: true);
+    }
+
+    // ───────────── Проверка протоколов ─────────────
+
+    public ObservableCollection<CheckLineItem> CheckLines { get; } = new();
+    public ObservableCollection<CheckHistoryItem> CheckHistory { get; } = new();
+
+    private CancellationTokenSource? _checkCts;
+    private bool _checkRunning;
+    public bool CheckRunning
+    {
+        get => _checkRunning;
+        private set { Set(ref _checkRunning, value); CommandManager.InvalidateRequerySuggested(); }
+    }
+
+    private string _checkProgress = "";
+    public string CheckProgress { get => _checkProgress; private set => Set(ref _checkProgress, value); }
+
+    private string _checkClientAddress = "";
+    public string CheckClientAddress { get => _checkClientAddress; private set => Set(ref _checkClientAddress, value); }
+
+    private string _checkRecommendation = "";
+    public string CheckRecommendation { get => _checkRecommendation; private set => Set(ref _checkRecommendation, value); }
+
+    private string _checkNetworkLabel = "";
+    /// <summary>Подпись сети для истории: «Дом, Ростелеком», «МТС, мобильный».</summary>
+    public string CheckNetworkLabel { get => _checkNetworkLabel; set => Set(ref _checkNetworkLabel, value); }
+
+    private async Task RunCheckAsync()
+    {
+        var snap = Snapshot;
+        var profile = SelectedServer;
+        if (snap == null || profile == null) return;
+
+        ProbeIdentity? probe = null;
+        string address = "";
+        var prepared = await RunAsync("Подготовка проверки на сервере…", s =>
+        {
+            probe = s.EnsureProbe(snap);
+            address = s.GetClientAddress();
+        });
+        if (!prepared || probe == null) return;
+
+        CheckClientAddress = address;
+        CheckLines.Clear();
+        CheckRecommendation = "";
+        CheckRunning = true;
+        _checkCts = new CancellationTokenSource();
+        var progress = new Progress<string>(m => CheckProgress = m);
+        try
+        {
+            var report = await Task.Run(() => ProtocolCheck.RunAsync(snap, probe, address,
+                (p, ct) => XrayBinary.EnsureAsync(CheckHistoryStore.ToolsFolder, p, ct), progress, _checkCts.Token));
+            report.NetworkLabel = CheckNetworkLabel.Trim();
+            foreach (var line in report.Lines) CheckLines.Add(new CheckLineItem(line));
+            CheckRecommendation = report.Recommendation;
+            CheckHistoryStore.Add(profile.Id, report);
+            CheckHistory.Insert(0, new CheckHistoryItem(report));
+            AppendLog("Проверка: " + string.Join("; ", report.Lines.Select(l => $"{l.Protocol} — {l.Summary}")));
+        }
+        catch (OperationCanceledException)
+        {
+            CheckRecommendation = "Проверка остановлена.";
+        }
+        catch (Exception ex)
+        {
+            ShowError(ex);
+        }
+        finally
+        {
+            CheckRunning = false;
+            CheckProgress = "";
+            _checkCts.Dispose();
+            _checkCts = null;
+        }
+    }
+
+    private void LoadCheckHistory()
+    {
+        CheckHistory.Clear();
+        CheckLines.Clear();
+        CheckRecommendation = "";
+        CheckClientAddress = "";
+        if (SelectedServer == null) return;
+        foreach (var r in CheckHistoryStore.Load(SelectedServer.Id)) CheckHistory.Add(new CheckHistoryItem(r));
     }
 
     // ───────────── Пользователи ─────────────

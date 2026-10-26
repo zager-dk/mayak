@@ -33,6 +33,10 @@ public sealed class InstallOptions
     public int DefaultDownMbps { get; set; } = 35;
     public int DefaultUpMbps { get; set; } = 35;
 
+    /// <summary>Сразу поставить Xray (VLESS + Reality + XHTTP) вторым протоколом.</summary>
+    public bool InstallXray { get; set; } = true;
+    public XrayInstallOptions Xray { get; set; } = new();
+
     /// <summary>Случайный порт 30000–49999, как AmneziaVPN: стандартные порты чаще блокируют.</summary>
     public static int RandomPort() => System.Security.Cryptography.RandomNumberGenerator.GetInt32(30000, 50000);
 }
@@ -48,6 +52,10 @@ public sealed class ServerSnapshot
     public List<string> Warnings { get; set; } = new();
     public string ServerAddress { get; set; } = "10.8.1.0";
 
+    /// <summary>Xray на сервере (null — не установлен).</summary>
+    public XrayEndpoint? Xray { get; set; }
+    public ServerState XrayState { get; set; } = ServerState.DockerOnly;
+
     /// <summary>Устройство числится активным, но его нет в конфиге сервера (отозвано вне Маяка).</summary>
     public bool IsMissingOnServer(VpnDevice d) => d.Enabled && !PeersOnServer.Contains(d.PublicKey);
 
@@ -59,7 +67,7 @@ public sealed class ServerSnapshot
 /// поэтому сервер продолжает открываться и в официальном приложении.
 /// Все методы синхронные (SSH) — вызывайте их из фонового потока.
 /// </summary>
-public sealed class MayakServer : IDisposable
+public sealed partial class MayakServer : IDisposable
 {
     public const string Container = "amnezia-awg2";
     public const string AwgDir = "/opt/amnezia/awg";
@@ -268,6 +276,7 @@ public sealed class MayakServer : IDisposable
 
         var names = ReadClientsTableNames();
         var ours = snap.Db.AllDevices.Select(d => d.PublicKey).ToHashSet();
+        if (snap.Db.Probe != null) ours.Add(snap.Db.Probe.AwgPublicKey);
         foreach (var peer in conf.Peers.Where(p => !ours.Contains(p.PublicKey)))
         {
             snap.Foreign.Add(new ForeignPeer
@@ -279,6 +288,7 @@ public sealed class MayakServer : IDisposable
         }
 
         snap.Stats = ReadStats();
+        LoadXray(snap);
 
         foreach (var d in snap.Db.AllDevices.Where(snap.IsMissingOnServer))
         {
@@ -468,9 +478,11 @@ public sealed class MayakServer : IDisposable
     /// <summary>База + clientsTable + лимиты.</summary>
     private void Commit(ServerSnapshot snap)
     {
+        if (snap.Xray != null) EnsureXrayIds(snap.Db);
         WriteDatabaseFile(snap.Db);
         SyncClientsTable(snap);
         ApplyLimits(snap);
+        if (snap.Xray != null) SyncXrayClients(snap);
     }
 
     // ───────────────────────────── Лимиты скорости ─────────────────────────────
@@ -660,27 +672,27 @@ public sealed class MayakServer : IDisposable
         }
     }
 
-    public CommandResult ExecContainer(string command, TimeSpan? timeout = null) =>
-        _ssh.Run($"{S}docker exec {Container} bash -c {SshConnection.Q(command)}", timeout);
+    public CommandResult ExecContainer(string command, TimeSpan? timeout = null, string container = Container) =>
+        _ssh.Run($"{S}docker exec {container} bash -c {SshConnection.Q(command)}", timeout);
 
-    private string? ReadContainerFile(string path)
+    private string? ReadContainerFile(string path, string container = Container)
     {
-        var r = ExecContainer($"test -f {SshConnection.Q(path)} && cat {SshConnection.Q(path)}");
+        var r = ExecContainer($"test -f {SshConnection.Q(path)} && cat {SshConnection.Q(path)}", null, container);
         return r.Ok ? r.Output : null;
     }
 
-    private void WriteContainerFile(string path, string content, string mode)
+    private void WriteContainerFile(string path, string content, string mode, string container = Container)
     {
         var tmp = _ssh.UploadTemp(content);
         try
         {
-            _ssh.RunChecked($"{S}docker cp {SshConnection.Q(tmp)} {Container}:{path}", $"Запись {path}");
+            _ssh.RunChecked($"{S}docker cp {SshConnection.Q(tmp)} {container}:{path}", $"Запись {path}");
         }
         finally
         {
             _ssh.Run($"rm -f {SshConnection.Q(tmp)}");
         }
-        ExecContainer($"chown root:root {SshConnection.Q(path)}; chmod {mode} {SshConnection.Q(path)}");
+        ExecContainer($"chown root:root {SshConnection.Q(path)}; chmod {mode} {SshConnection.Q(path)}", null, container);
     }
 
     private static void ExpectOk(CommandResult r, string what)

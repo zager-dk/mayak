@@ -15,6 +15,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Mayak.SelfTest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <EmbeddedResource Include="Server\Scripts\*" LogicalName="Mayak.Scripts.%(Filename)%(Extension)" />
   </ItemGroup>
 
