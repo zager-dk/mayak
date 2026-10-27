@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Маяк · управление</title>
+<style>
+  :root {
+    --navy: #0E1A2B; --navy2: #1A2A40; --amber: #F5A524; --amber-d: #D98B0B;
+    --page: #F4F6F9; --card: #FFFFFF; --line: #E2E6EC; --text: #1B2533; --muted: #6B7788;
+    --green: #1F9D55; --red: #D64545; --orange: #E07B00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --page: #0B1320; --card: #131E2E; --line: #24324A; --text: #E6EBF2; --muted: #8C9AAE; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 "Segoe UI", system-ui, -apple-system, sans-serif; background: var(--page); color: var(--text); }
+  header { background: var(--navy); color: #fff; padding: 12px 16px; display: flex; align-items: center; gap: 12px; }
+  header b { font-size: 16px; }
+  header .who { margin-left: auto; color: #C9D3E0; font-size: 13px; }
+  nav { display: flex; gap: 4px; padding: 0 12px; background: var(--card); border-bottom: 1px solid var(--line); overflow-x: auto; }
+  nav button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 12px 12px; font: inherit; color: var(--muted); cursor: pointer; white-space: nowrap; }
+  nav button.on { color: var(--text); border-color: var(--amber); font-weight: 600; }
+  main { max-width: 1100px; margin: 0 auto; padding: 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-bottom: 12px; }
+  h2 { font-size: 16px; margin: 0 0 10px; }
+  .row > h2 { flex: 1 1 180px; margin: 0; }
+  .muted { color: var(--muted); font-size: 12.5px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .grow { flex: 1; min-width: 0; }
+  button.b, a.b { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 6px; padding: 7px 12px; cursor: pointer; text-decoration: none; display: inline-block; }
+  button.b:hover { border-color: #B8C2D0; }
+  button.p { background: var(--amber); border-color: var(--amber-d); color: #1B1405; font-weight: 600; }
+  button.d { color: var(--red); }
+  button:disabled { opacity: .45; cursor: default; }
+  input, select, textarea { font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+  .list > div { padding: 10px 4px; border-top: 1px solid var(--line); cursor: pointer; display: flex; gap: 10px; align-items: center; }
+  .list > div:first-child { border-top: 0; }
+  .list > div:hover { background: rgba(245,165,36,.07); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #B8C2D0; flex: none; }
+  .dot.on { background: var(--green); } .dot.off { background: var(--red); } .dot.warn { background: var(--orange); }
+  .chip { font-size: 11.5px; padding: 1px 7px; border-radius: 10px; background: rgba(107,119,136,.15); color: var(--muted); }
+  .chip.wait { background: rgba(224,123,0,.15); color: var(--orange); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  td, th { text-align: left; padding: 7px 6px; border-top: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; border-top: 0; }
+  code, pre { font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; }
+  pre { white-space: pre-wrap; word-break: break-all; background: var(--page); border: 1px solid var(--line); border-radius: 6px; padding: 10px; }
+  .stats { display: flex; gap: 24px; flex-wrap: wrap; }
+  .stats div b { display: block; font-size: 20px; }
+  .err { color: var(--red); }
+  #toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--navy); color: #fff; padding: 9px 16px; border-radius: 6px; display: none; z-index: 9; }
+  .login { max-width: 420px; margin: 12vh auto; text-align: center; }
+  @media (max-width: 640px) { .grid2 { grid-template-columns: 1fr; } td.hide, th.hide { display: none; } }
+</style>
+</head>
+<body>
+<header><b>Маяк</b><span class="muted" style="color:#8C9AAE">управление</span><span class="who" id="who"></span></header>
+<nav id="tabs" hidden>
+  <button data-t="people" class="on">Люди</button>
+  <button data-t="servers">Серверы</button>
+  <button data-t="settings">Настройки</button>
+  <button data-t="audit">Журнал</button>
+</nav>
+<main id="app"></main>
+<div id="toast"></div>
+<script>
+"use strict";
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} } };
+let token = store.get("mayak.token"), me = null, tab = "people", selected = null;
+const kinds = { Windows: "Windows", Android: "Android", IPhone: "iPhone", Mac: "Mac", Linux: "Linux", Other: "Другое" };
+const rank = r => ({ owner: 3, admin: 2, support: 1 }[r] || 0);
+
+function toast(t) { const el = $("#toast"); el.textContent = t; el.style.display = "block"; clearTimeout(toast.t); toast.t = setTimeout(() => el.style.display = "none", 2600); }
+async function api(path, opt = {}) {
+  const r = await fetch(path, { ...opt, headers: { "Content-Type": "application/json", ...(token ? { Authorization: "Bearer " + token } : {}), ...(opt.headers || {}) }, body: opt.body ? JSON.stringify(opt.body) : undefined });
+  if (r.status === 401) { logout(); throw new Error("Нужно войти заново"); }
+  if (r.status === 204) return null;
+  const data = await r.json().catch(() => null);
+  if (!r.ok) throw new Error(data?.error || ("Ошибка " + r.status));
+  return data;
+}
+const when = d => d ? new Date(d).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
+const day = d => d ? new Date(d).toLocaleDateString("ru-RU") : "без срока";
+const bytes = n => n > 1e9 ? (n / 1e9).toFixed(1) + " ГБ" : n > 1e6 ? (n / 1e6).toFixed(0) + " МБ" : n > 0 ? (n / 1e3).toFixed(0) + " КБ" : "—";
+const online = d => d && (Date.now() - new Date(d)) < 3 * 60e3;
+function download(name, text) { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], { type: "text/plain" })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); }
+async function copy(text) { try { await navigator.clipboard.writeText(text); toast("Скопировано"); } catch { prompt("Скопируйте:", text); } }
+
+// ───── Вход ─────
+function logout() { if (token) fetch("/api/logout", { method: "POST", headers: { Authorization: "Bearer " + token } }).catch(() => {}); token = null; store.set("mayak.token", null); me = null; render(); }
+async function startLogin() {
+  const btn = $("#login"); btn.disabled = true;
+  try {
+    const r = await api("/api/auth/telegram", { method: "POST" });
+    window.open(r.botUrl, "_blank");
+    $("#loginHint").innerHTML = `Откройте бота и нажмите «Запустить». Если окно не открылось — <a href="${esc(r.botUrl)}" target="_blank">ссылка на бота</a>.`;
+    const until = Date.now() + r.expiresInSeconds * 1000;
+    while (Date.now() < until) {
+      await new Promise(ok => setTimeout(ok, 2000));
+      const res = await fetch(`/api/auth/telegram/${encodeURIComponent(r.requestId)}?client=web`);
+      if (res.status === 202) continue;
+      if (res.ok) { const d = await res.json(); token = d.token; store.set("mayak.token", token); return boot(); }
+      break;
+    }
+    $("#loginHint").textContent = "Время на вход вышло. Нажмите кнопку ещё раз.";
+  } catch (e) { $("#loginHint").textContent = e.message; }
+  btn.disabled = false;
+}
+
+async function boot() {
+  if (!token) return render();
+  try { me = (await api("/api/me")).account; } catch { return render(); }
+  render();
+}
+
+function render() {
+  $("#who").innerHTML = me ? `${esc(me.name)} · <a href="#" id="out" style="color:#F5A524">выйти</a>` : "";
+  if (me) $("#out").onclick = e => { e.preventDefault(); logout(); };
+  $("#tabs").hidden = !(me && rank(me.role) >= 1);
+  const app = $("#app");
+  if (!me) {
+    app.innerHTML = `<div class="card login"><h2>Вход в управление</h2><p class="muted">Через Telegram: бот подтвердит, что это вы.</p>
+      <button class="b p" id="login">Войти через Telegram</button><p class="muted" id="loginHint"></p></div>`;
+    $("#login").onclick = startLogin;
+    return;
+  }
+  if (rank(me.role) < 1) {
+    app.innerHTML = `<div class="card login"><h2>${esc(me.name)}</h2><p>${me.enabled ? "Доступ включён" : "Заявка ждёт одобрения"} · ${esc(day(me.paidUntil))}</p>
+      <p class="muted">Управление доступно только администраторам.</p></div>`;
+    return;
+  }
+  document.querySelectorAll("#tabs button").forEach(b => { b.classList.toggle("on", b.dataset.t === tab); b.onclick = () => { tab = b.dataset.t; selected = null; render(); }; });
+  ({ people, servers, settings, audit })[tab]().catch(e => app.innerHTML = `<div class="card err">${esc(e.message)}</div>`);
+}
+
+// ───── Люди ─────
+async function people() {
+  const app = $("#app");
+  const [ov, list] = await Promise.all([api("/api/admin/overview"), api("/api/admin/accounts" + (people.q ? "?q=" + encodeURIComponent(people.q) : ""))]);
+  app.innerHTML = `<div class="card stats"><div><b>${ov.accounts}</b><span class="muted">людей</span></div><div><b>${ov.waiting}</b><span class="muted">ждут одобрения</span></div>
+      <div><b>${ov.devices}</b><span class="muted">устройств</span></div><div><b>${ov.online}</b><span class="muted">в сети</span></div></div>
+    <div class="card"><div class="row"><input class="grow" id="q" placeholder="Поиск по имени или @telegram" value="${esc(people.q || "")}"><button class="b p" id="add">+ Человек</button></div>
+      <div class="list" id="list" style="margin-top:8px"></div></div><div id="detail"></div>`;
+  $("#q").onchange = e => { people.q = e.target.value; render(); };
+  $("#add").onclick = async () => { const name = prompt("Имя (например, «Мама»):"); if (!name) return; const a = await api("/api/admin/accounts", { method: "POST", body: { name } }); selected = a.id; render(); };
+  const box = $("#list");
+  if (!list.length) box.innerHTML = `<p class="muted">Пока никого. Людей добавит вход через бота, перенос с сервера или кнопка «+ Человек».</p>`;
+  for (const row of list) {
+    const a = row.account, on = row.devices.some(d => online(d.lastHandshake));
+    const el = document.createElement("div");
+    el.innerHTML = `<span class="dot ${on ? "on" : ""}"></span><div class="grow"><b>${esc(a.name)}</b> ${a.telegram ? `<span class="muted">@${esc(a.telegram)}</span>` : ""}
+      <div class="muted">${row.devices.length} устр. · ${a.active ? esc(day(a.paidUntil)) : (a.enabled ? "подписка истекла" : "ждёт одобрения")}</div></div>
+      ${!a.enabled ? `<span class="chip wait">ждёт</span>` : ""}${a.role !== "user" ? `<span class="chip">${esc(a.role)}</span>` : ""}`;
+    el.onclick = () => { selected = a.id; showPerson(row); };
+    box.appendChild(el);
+    if (selected === a.id) showPerson(row);
+  }
+}
+
+function showPerson(row) {
+  const a = row.account, d = $("#detail");
+  d.innerHTML = `<div class="card"><div class="row"><h2 class="grow">${esc(a.name)}</h2>
+      ${!a.enabled ? `<button class="b p" id="approve">Одобрить</button>` : `<button class="b" id="pause">Приостановить</button>`}
+      <button class="b d" id="del">Удалить</button></div>
+    <div class="grid2">
+      <div><label>Имя</label><input id="name" value="${esc(a.name)}" style="width:100%"></div>
+      <div><label>Оплачено до (пусто — без срока)</label><input type="date" id="until" value="${a.paidUntil ? a.paidUntil.slice(0, 10) : ""}" style="width:100%"></div>
+      <div><label>Устройств максимум</label><input type="number" id="max" min="0" value="${a.maxDevices}" style="width:100%"></div>
+      <div><label>Скорость, Мбит/с: приём / отдача (0 — без лимита)</label><div class="row"><input type="number" id="down" min="0" value="${a.downMbps}" style="width:45%"><input type="number" id="up" min="0" value="${a.upMbps}" style="width:45%"></div></div>
+      <div><label>Заметка</label><input id="note" value="${esc(row.note || "")}" style="width:100%"></div>
+      ${me.role === "owner" ? `<div><label>Роль</label><select id="role" style="width:100%">${["user", "support", "admin", "owner"].map(r => `<option ${r === a.role ? "selected" : ""}>${r}</option>`).join("")}</select></div>` : ""}
+    </div>
+    <div class="row" style="margin-top:12px"><button class="b p" id="save">Сохранить</button>${row.legacy ? `<span class="muted">перенесён из Маяка для Windows</span>` : ""}</div></div>
+    <div class="card"><div class="row"><h2 class="grow">Устройства</h2><select id="kind">${Object.entries(kinds).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select><button class="b" id="adddev">+ Устройство</button></div>
+    <table><tr><th></th><th>Устройство</th><th class="hide">IP</th><th class="hide">Трафик</th><th>Был в сети</th><th></th></tr>
+    ${row.devices.map(x => `<tr data-id="${x.id}"><td><span class="dot ${!x.enabled ? "off" : online(x.lastHandshake) ? "on" : ""}"></span></td>
+      <td>${esc(x.name)}<div class="muted">${esc(kinds[x.kind] || x.kind)}</div></td><td class="hide">${esc(x.ip)}</td><td class="hide">${bytes(x.rxBytes + x.txBytes)}</td><td>${when(x.lastHandshake)}</td>
+      <td class="row">${x.canExport ? `<button class="b" data-a="files">Файл</button>` : ""}<button class="b" data-a="toggle">${x.enabled ? "Выкл." : "Вкл."}</button><button class="b d" data-a="del">✕</button></td></tr>`).join("")}
+    </table>${row.devices.length ? "" : `<p class="muted">Устройств нет. Из приложения «Маяк» человек добавит их сам, а своим людям можно выдать файл кнопкой «+ Устройство».</p>`}<div id="files"></div></div>`;
+  const patch = body => api(`/api/admin/accounts/${a.id}`, { method: "PATCH", body }).then(() => { toast("Сохранено"); render(); }).catch(e => toast(e.message));
+  if ($("#approve")) $("#approve").onclick = () => patch({ enabled: true });
+  if ($("#pause")) $("#pause").onclick = () => confirm(`Приостановить доступ для «${a.name}»?`) && patch({ enabled: false });
+  $("#del").onclick = () => confirm(`Удалить «${a.name}» со всеми устройствами?`) && api(`/api/admin/accounts/${a.id}`, { method: "DELETE" }).then(() => { selected = null; render(); }).catch(e => toast(e.message));
+  $("#save").onclick = () => {
+    const until = $("#until").value;
+    const body = { name: $("#name").value, note: $("#note").value, maxDevices: +$("#max").value, downMbps: +$("#down").value, upMbps: +$("#up").value };
+    if (until) body.paidUntil = until + "T23:59:59Z"; else body.clearPaidUntil = true;
+    if ($("#role")) body.role = $("#role").value;
+    patch(body);
+  };
+  $("#adddev").onclick = async () => {
+    const kind = $("#kind").value, name = prompt("Название устройства:", kinds[kind]); if (!name) return;
+    try { const r = await api(`/api/admin/accounts/${a.id}/devices`, { method: "POST", body: { name, kind } }); showFiles(a, { name, kind }, r); toast("Устройство добавлено"); }
+    catch (e) { toast(e.message); }
+  };
+  d.querySelectorAll("tr[data-id] button").forEach(b => b.onclick = async () => {
+    const id = b.closest("tr").dataset.id, x = row.devices.find(v => v.id === id);
+    try {
+      if (b.dataset.a === "files") showFiles(a, x, await api(`/api/admin/devices/${id}/files`));
+      if (b.dataset.a === "toggle") { await api(`/api/admin/devices/${id}`, { method: "PATCH", body: { enabled: !x.enabled } }); render(); }
+      if (b.dataset.a === "del" && confirm(`Удалить «${x.name}»? Доступ на нём пропадёт.`)) { await api(`/api/admin/devices/${id}`, { method: "DELETE" }); render(); }
+    } catch (e) { toast(e.message); }
+  });
+  d.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function showFiles(a, dev, f) {
+  const base = `${a.name}-${dev.name}`.replace(/[^\p{L}\p{N}_-]+/gu, "_");
+  const conf = dev.kind === "IPhone" || dev.kind === "Mac";
+  $("#files").innerHTML = `<div style="margin-top:12px"><b>Доступ для «${esc(dev.name)}»</b>
+    <p class="muted">${conf ? "iPhone и Mac: файл .conf → приложение AmneziaWG." : "Windows и Android: файл .vpn или ключ vpn:// → приложение AmneziaVPN."}</p>
+    <div class="row"><button class="b p" id="dl1">Скачать ${conf ? ".conf" : ".vpn"}</button><button class="b" id="dl2">Скачать ${conf ? ".vpn" : ".conf"}</button><button class="b" id="cp">Копировать vpn://</button></div></div>`;
+  const vpn = () => download(base + ".vpn", f.vpnKey), cf = () => download(base + ".conf", f.conf);
+  $("#dl1").onclick = conf ? cf : vpn; $("#dl2").onclick = conf ? vpn : cf; $("#cp").onclick = () => copy(f.vpnKey);
+}
+
+// ───── Серверы ─────
+async function servers() {
+  const app = $("#app"), list = await api("/api/admin/servers");
+  const exits = list.filter(s => s.role === "exit");
+  app.innerHTML = `<div class="card"><div class="row"><h2 class="grow">Серверы</h2>${rank(me.role) >= 2 ? `<button class="b p" id="add">+ Сервер</button>` : ""}</div>
+    <div class="list" id="list"></div></div><div id="detail"></div>`;
+  if ($("#add")) $("#add").onclick = () => serverForm();
+  const box = $("#list");
+  if (!list.length) box.innerHTML = `<p class="muted">Серверов нет. Добавьте выход за рубежом, на котором уже стоит VPN Маяка.</p>`;
+  for (const s of list) {
+    const el = document.createElement("div");
+    const target = s.targetExitId ? exits.find(e => e.id === s.targetExitId)?.name : null;
+    el.innerHTML = `<span class="dot ${s.lastError ? "warn" : s.online ? "on" : "off"}"></span><div class="grow"><b>${esc(s.name)}</b> <span class="muted">${esc(s.host)}</span>
+      <div class="muted">${s.role === "exit" ? "выход" + (s.active ? " · активный" : "") : "вход" + (target ? " → " + esc(target) : " · не пересылает")} · ${s.lastSeen ? "связь " + when(s.lastSeen) : "агент не выходил на связь"}</div>
+      ${s.lastError ? `<div class="err" style="font-size:12.5px">${esc(s.lastError)}</div>` : ""}</div>`;
+    el.onclick = () => serverDetail(s, exits);
+    box.appendChild(el);
+  }
+}
+
+function serverForm() {
+  $("#detail").innerHTML = `<div class="card"><h2>Новый сервер</h2><div class="grid2">
+    <div><label>Тип</label><select id="role" style="width:100%"><option value="exit">Выход (за рубежом, VPN уже установлен)</option><option value="entry">Вход (в России, пересылает на выход)</option></select></div>
+    <div><label>Адрес (IP)</label><input id="host" style="width:100%" placeholder="45.131.185.211"></div>
+    <div><label>Название</label><input id="name" style="width:100%" placeholder="Финляндия, Хельсинки"></div>
+    <div><label>Город · страна</label><div class="row"><input id="city" placeholder="Хельсинки" style="width:48%"><input id="country" placeholder="Финляндия" style="width:48%"></div></div>
+    </div><div class="row" style="margin-top:12px"><button class="b p" id="go">Добавить</button></div><div id="out"></div></div>`;
+  $("#go").onclick = async () => {
+    try {
+      const r = await api("/api/admin/servers", { method: "POST", body: { role: $("#role").value, host: $("#host").value, name: $("#name").value, city: $("#city").value, country: $("#country").value } });
+      installBox(r.install);
+    } catch (e) { toast(e.message); }
+  };
+}
+
+function installBox(cmd) {
+  $("#out").innerHTML = `<p>Выполните на этом сервере под root (ssh или консоль хостинга):</p><pre>${esc(cmd)}</pre>
+    <button class="b" id="cp">Копировать</button> <span class="muted">Команда показывается один раз — в ней секретный токен агента.</span>`;
+  $("#cp").onclick = () => copy(cmd);
+}
+
+function serverDetail(s, exits) {
+  $("#detail").innerHTML = `<div class="card"><div class="row"><h2 class="grow">${esc(s.name)}</h2>
+      ${s.role === "exit" && !s.active ? `<button class="b p" id="act">Сделать активным</button>` : ""}
+      ${rank(me.role) >= 2 ? `<button class="b" id="tok">Новая команда установки</button><button class="b d" id="del">Удалить</button>` : ""}</div>
+    <div class="grid2">
+      <div><label>Название</label><input id="name" value="${esc(s.name)}" style="width:100%"></div>
+      <div><label>Адрес</label><input id="host" value="${esc(s.host)}" style="width:100%"></div>
+      <div><label>Город · страна</label><div class="row"><input id="city" value="${esc(s.city)}" style="width:48%"><input id="country" value="${esc(s.country)}" style="width:48%"></div></div>
+      <div><label>Чем знаменит (для карточки в приложении)</label><input id="fact" value="${esc(s.fact)}" style="width:100%"></div>
+      ${s.role === "entry" ? `<div><label>Пересылать на выход</label><select id="target" style="width:100%"><option value="">— не пересылать —</option>${exits.map(e => `<option value="${e.id}" ${e.id === s.targetExitId ? "selected" : ""}>${esc(e.name)} (${esc(e.host)})</option>`).join("")}</select></div>` : ""}
+    </div><div class="row" style="margin-top:12px"><button class="b p" id="save">Сохранить</button><span class="muted">агент ${esc(s.agentVersion || "—")}</span></div><div id="out"></div></div>`;
+  const patch = body => api(`/api/admin/servers/${s.id}`, { method: "PATCH", body }).then(() => { toast("Сохранено"); render(); }).catch(e => toast(e.message));
+  $("#save").onclick = () => {
+    const body = { name: $("#name").value, host: $("#host").value, city: $("#city").value, country: $("#country").value, fact: $("#fact").value };
+    if ($("#target")) { if ($("#target").value) body.targetExitId = $("#target").value; else body.clearTarget = true; }
+    patch(body);
+  };
+  if ($("#act")) $("#act").onclick = () => confirm("Перевести трафик на этот выход? Входы переключатся на него.") && patch({ active: true });
+  if ($("#tok")) $("#tok").onclick = async () => { if (!confirm("Старый токен агента перестанет работать. Продолжить?")) return; const r = await api(`/api/admin/servers/${s.id}/token`, { method: "POST" }); installBox(r.install); };
+  if ($("#del")) $("#del").onclick = () => confirm(`Удалить «${s.name}» из списка? На самом сервере VPN продолжит работать.`) && api(`/api/admin/servers/${s.id}`, { method: "DELETE" }).then(render);
+}
+
+// ───── Настройки ─────
+async function settings() {
+  const c = await api("/api/admin/cluster"), app = $("#app");
+  if (!c.ready) { app.innerHTML = `<div class="card"><h2>Настройки</h2><p class="muted">Появятся, когда агент первого выхода выйдет на связь: его ключи станут общими для всех выходов.</p></div>`; return; }
+  app.innerHTML = `<div class="card"><h2>Общие настройки</h2><div class="grid2">
+    <div><label>Название в приложениях</label><input id="title" value="${esc(c.title)}" style="width:100%"></div>
+    <div><label>Адрес для пользователей (пусто — вход или активный выход)</label><input id="host" value="${esc(c.publicHost)}" placeholder="${esc(c.effectiveHost)}" style="width:100%"></div>
+    <div><label>DNS</label><div class="row"><input id="dns1" value="${esc(c.dns1)}" style="width:48%"><input id="dns2" value="${esc(c.dns2)}" style="width:48%"></div></div>
+    </div><div class="row" style="margin-top:12px"><button class="b p" id="save">Сохранить</button></div>
+    <p class="muted">Сейчас пользователи подключаются к <b>${esc(c.effectiveHost || "—")}</b>. AmneziaWG ${esc(c.awg.protocol)}, UDP ${c.awg.port}, подсеть ${esc(c.awg.subnet)}${c.xray ? ` · Xray TCP ${c.xray.port}, маскировка под ${esc(c.xray.sni)}` : ""}. Ревизия ${c.revision}.</p></div>`;
+  $("#save").onclick = () => api("/api/admin/cluster", { method: "PATCH", body: { title: $("#title").value, publicHost: $("#host").value, dns1: $("#dns1").value, dns2: $("#dns2").value } }).then(() => { toast("Сохранено"); render(); }).catch(e => toast(e.message));
+}
+
+async function audit() {
+  const list = await api("/api/admin/audit");
+  $("#app").innerHTML = `<div class="card"><h2>Журнал</h2><table><tr><th>Когда</th><th>Действие</th><th>Подробности</th></tr>
+    ${list.map(x => `<tr><td>${when(x.at)}</td><td>${esc(x.action)}</td><td>${esc(x.details)}</td></tr>`).join("")}</table></div>`;
+}
+
+boot();
+</script>
+</body>
+</html>

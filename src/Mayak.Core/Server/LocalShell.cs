@@ -23,7 +23,8 @@ public sealed class LocalShell : IShell
         IsRoot = Run("id -u", TimeSpan.FromSeconds(10)).Output.Trim() == "0";
         Sudo = IsRoot ? "" : "sudo -n ";
         Directory.CreateDirectory(_tempDir);
-        File.SetUnixFileMode(_tempDir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        if (!OperatingSystem.IsWindows())
+            File.SetUnixFileMode(_tempDir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
     }
 
     public bool IsAlive() => true;
@@ -62,7 +63,7 @@ public sealed class LocalShell : IShell
         Directory.CreateDirectory(_tempDir);
         var path = Path.Combine(_tempDir, Guid.NewGuid().ToString("N") + suffix);
         File.WriteAllText(path, content.Replace("\r\n", "\n"), new UTF8Encoding(false));
-        File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
         return path;
     }
 

@@ -118,7 +118,8 @@ public sealed partial class MayakServer : IDisposable
 
     public void Connect()
     {
-        Info($"Подключение к {_creds.Host}:{_creds.Port} как {_creds.User}" + (_creds.Jump is { } j ? $" через {j.Host}…" : "…"));
+        if (_ssh is LocalShell) Info("Работаю на этом сервере.");
+        else Info($"Подключение к {_creds.Host}:{_creds.Port} как {_creds.User}" + (_creds.Jump is { } j ? $" через {j.Host}…" : "…"));
         _ssh.Connect();
         Info(_ssh.IsRoot ? "Вход выполнен (root)." : "Вход выполнен (sudo без пароля).");
     }
