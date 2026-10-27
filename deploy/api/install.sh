@@ -36,7 +36,20 @@ fi
 
 say "Пакеты: PostgreSQL, .NET 8, Caddy"
 export DEBIAN_FRONTEND=noninteractive
-apt-get update -qq
+# Зеркало хостера (например, mirror.timeweb.ru) бывает недоступно из самой ВМ — тогда берём официальное.
+fix_mirrors() {
+  local files host
+  files=$(ls /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true)
+  for host in $(grep -hoE 'https?://[^/ ]+' $files 2>/dev/null | sed -E 's#https?://##' | sort -u); do
+    case "$host" in *ubuntu.com|*debian.org|*cloudsmith.io|*microsoft.com) continue ;; esac
+    if ! getent hosts "$host" >/dev/null; then
+      echo "Зеркало $host не находится — переключаю на официальные зеркала Ubuntu"
+      sed -i -E "s#https?://$host/ubuntu/?#http://archive.ubuntu.com/ubuntu/#g" $files
+    fi
+  done
+}
+fix_mirrors
+apt-get update -qq || die "apt-get update не прошёл — проверьте интернет и DNS на сервере (cat /etc/resolv.conf)"
 apt-get install -y -qq postgresql git curl ca-certificates python3 sudo >/dev/null
 if ! command -v dotnet >/dev/null || ! dotnet --list-sdks 2>/dev/null | grep -q '^8\.'; then
   apt-get install -y -qq dotnet-sdk-8.0 >/dev/null || die "Не удалось установить .NET 8"
