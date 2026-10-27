@@ -21,6 +21,9 @@ die() { echo -e "\n\033[1;31m✖ $*\033[0m"; exit 1; }
 [ "$(id -u)" = 0 ] || die "Запустите от root"
 [ -n "$API" ] && [ -n "$TOKEN" ] || die "Нужны --api и --token (команду выдаёт админка Маяка)"
 
+# По http адрес перенаправляется на https, а при перенаправлении токен не передаётся — сразу берём https.
+case "$API" in http://*) curl -fs --max-time 10 "https://${API#http://}/health" >/dev/null 2>&1 && API="https://${API#http://}" ;; esac
+
 say "Агент Маяка"
 mkdir -p /opt/mayak /etc/mayak /var/lib/mayak-agent
 curl -fsSL --retry 3 "$API/download/mayak-agent" -o /opt/mayak/mayak-agent.new || die "Не удалось скачать агента с $API"
