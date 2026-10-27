@@ -19,9 +19,9 @@ public static class AgentEndpoints
             server.LastSeen = DateTime.UtcNow;
             server.AgentVersion = hello.Version;
             int imported = 0;
-            if (server.Role == ServerRoles.Exit && hello.Identity != null)
+            if (server.Role == ServerRoles.Exit)
             {
-                if (await cluster.AdoptIdentityAsync(hello.Identity, http.RequestAborted))
+                if (hello.Identity != null && await cluster.AdoptIdentityAsync(hello.Identity, http.RequestAborted))
                     log.LogInformation("Ключи выхода {Name} приняты как общие для всех выходов", server.Name);
                 if (hello.Legacy != null)
                 {
@@ -54,6 +54,8 @@ public static class AgentEndpoints
                 Result = report.Result,
                 ReservedIps = report.ReservedIps,
                 Warnings = report.Warnings,
+                DryRun = report.DryRun,
+                At = DateTime.UtcNow,
             });
             if (report.Peers.Count > 0)
             {

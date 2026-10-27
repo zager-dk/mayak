@@ -192,7 +192,7 @@ public static class AdminEndpoints
             Audit(db, http, "server.create", $"{s.Role} {s.Name} {s.Host}");
             await db.SaveChangesAsync();
             await cluster.BumpAsync();
-            return Results.Ok(new { server = ServerView(s), agentToken = token, install = InstallCommand(agentInstallUrl, publicUrl, token) });
+            return Results.Ok(new { server = ServerView(s), agentToken = token, install = InstallCommand(agentInstallUrl, publicUrl, token), installDryRun = InstallCommand(agentInstallUrl, publicUrl, token) + " --dry-run" });
         });
 
         admin.MapPost("/servers/{id:guid}/token", async (Guid id, HttpContext http, MayakDb db) =>
@@ -203,7 +203,7 @@ public static class AdminEndpoints
             s.AgentTokenHash = Tokens.Hash(token);
             Audit(db, http, "server.token", s.Name);
             await db.SaveChangesAsync();
-            return Results.Ok(new { agentToken = token, install = InstallCommand(agentInstallUrl, publicUrl, token) });
+            return Results.Ok(new { agentToken = token, install = InstallCommand(agentInstallUrl, publicUrl, token), installDryRun = InstallCommand(agentInstallUrl, publicUrl, token) + " --dry-run" });
         });
 
         admin.MapPatch("/servers/{id:guid}", async (Guid id, ServerPatch body, HttpContext http, MayakDb db, ClusterService cluster) =>
@@ -310,7 +310,19 @@ public static class AdminEndpoints
         online = s.LastSeen > DateTime.UtcNow.AddMinutes(-2),
         s.AgentVersion,
         s.LastError,
+        report = ReadReport(s.LastReport),
     };
+
+    private static object? ReadReport(string? json)
+    {
+        if (string.IsNullOrEmpty(json)) return null;
+        try
+        {
+            var r = System.Text.Json.JsonSerializer.Deserialize<Mayak.Core.Agent.AgentReport>(json);
+            return r == null ? null : new { r.DryRun, r.Warnings, r.Result, r.AppliedRevision, r.At };
+        }
+        catch (System.Text.Json.JsonException) { return null; }
+    }
 
     private static void Audit(MayakDb db, HttpContext http, string action, string details) =>
         db.Audit.Add(new AuditEntry { ActorId = http.Me().Id, Action = action, Details = details });

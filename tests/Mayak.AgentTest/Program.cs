@@ -62,33 +62,45 @@ using (var scope = factory.Services.CreateScope())
 var admin = factory.CreateClient();
 admin.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", ownerToken);
 
-AgentRunner AgentFor(string token)
+var stateDir = "/root/.mayak_agent_state_" + dbName;
+AgentRunner AgentFor(string token, bool dryRun = false)
 {
     var http = factory.CreateClient();
-    return new AgentRunner(new AgentConfig { Api = "http://localhost", Token = token, PublicHost = "45.131.185.211" }, http, () => new LocalShell("/root/.mayak_agent_tmp"), Log);
+    return new AgentRunner(new AgentConfig { Api = "http://localhost", Token = token, PublicHost = "45.131.185.211", DryRun = dryRun, StateDir = stateDir }, http, () => new LocalShell("/root/.mayak_agent_tmp"), Log);
 }
 string Conf() => File.ReadAllText(MayakServer.ConfPath);
 int PeerCount() => Conf().Split('\n').Count(l => l.Trim() == "[Peer]");
 
-Console.WriteLine("Знакомство агента с API:");
+Console.WriteLine("Пробный запуск агента (человек в API заведён раньше, чем агент вышел на связь):");
+var confBefore = Conf();
 var created = await (await admin.PostAsJsonAsync("/api/admin/servers", new { name = "Хельсинки", role = "exit", host = "45.131.185.211" })).Content.ReadFromJsonAsync<JsonNode>();
-var agent = AgentFor(created!["agentToken"]!.GetValue<string>());
-await agent.CycleAsync(CancellationToken.None);
-Check("агент на связи как выход", agent.Role == "exit", string.Join(" | ", log));
+Check("админка выдаёт и пробную команду установки", created!["installDryRun"]?.GetValue<string>().EndsWith("--dry-run") == true);
+var mama = await (await admin.PostAsJsonAsync("/api/admin/accounts", new { name = "Мама" })).Content.ReadFromJsonAsync<JsonNode>();
+var dry = AgentFor(created["agentToken"]!.GetValue<string>(), dryRun: true);
+await dry.CycleAsync(CancellationToken.None);
+Check("агент на связи как выход", dry.Role == "exit", string.Join(" | ", log));
 var cluster = await admin.GetFromJsonAsync<JsonNode>("/api/admin/cluster");
 Check("ключи этого выхода стали общими", cluster?["ready"]?.GetValue<bool>() == true && cluster["awg"]!["port"]!.GetValue<int>() == 41234);
 var accounts = await admin.GetFromJsonAsync<JsonArray>("/api/admin/accounts");
 var ivanRow = accounts!.FirstOrDefault(a => a!["account"]!["name"]!.GetValue<string>() == "Иван");
-Check("Иван и его устройства перенесены в API", ivanRow?["devices"]?.AsArray().Count == 2);
-Check("после первой синхронизации подключения на месте", PeerCount() == 3, Conf());
-
-Console.WriteLine("Изменения из API доходят до сервера:");
-var mama = await (await admin.PostAsJsonAsync("/api/admin/accounts", new { name = "Мама" })).Content.ReadFromJsonAsync<JsonNode>();
+Check("Иван и его устройства перенесены в API, хотя там уже были люди", ivanRow?["devices"]?.AsArray().Count == 2);
 var dev = await (await admin.PostAsJsonAsync($"/api/admin/accounts/{mama!["id"]}/devices", new { name = "Android", kind = "Android" })).Content.ReadFromJsonAsync<JsonNode>();
 var devIp = dev!["device"]!["ip"]!.GetValue<string>();
-Check("адрес нового устройства не занят служебной учёткой", devIp != "10.8.1.3" && devIp != "10.8.1.1" && devIp != "10.8.1.2", devIp);
+Check("адрес нового устройства не занят ни Иваном, ни служебной учёткой", devIp != "10.8.1.3" && devIp != "10.8.1.1" && devIp != "10.8.1.2", devIp);
+await dry.CycleAsync(CancellationToken.None);
+Check("в пробном режиме файлы сервера не изменились", Conf() == confBefore);
+var srv = (await admin.GetFromJsonAsync<JsonArray>("/api/admin/servers"))!.First(x => x!["role"]!.GetValue<string>() == "exit")!;
+var warn = string.Join(" ", srv["report"]?["warnings"]?.AsArray().Select(w => w!.GetValue<string>()) ?? Array.Empty<string>());
+Check("отчёт в админке: пробный режим, добавил бы 1, отозвал бы 0", srv["report"]?["dryRun"]?.GetValue<bool>() == true && warn.Contains("добавил бы 1 и отозвал бы 0"), warn);
+Check("резервной копии в пробном режиме нет", !Directory.Exists(Path.Combine(stateDir, "backup")));
+
+Console.WriteLine("Включение по-настоящему:");
+var agent = AgentFor(created["agentToken"]!.GetValue<string>());
 await agent.CycleAsync(CancellationToken.None);
-Check("новое устройство появилось на сервере", Conf().Contains(devIp + "/32") && PeerCount() == 4, devIp);
+var backups = Directory.Exists(Path.Combine(stateDir, "backup")) ? Directory.GetDirectories(Path.Combine(stateDir, "backup")) : Array.Empty<string>();
+Check("перед первым изменением сделана копия настроек", backups.Length == 1 && File.Exists(Path.Combine(backups[0], "awg", "awg0.conf")) && File.ReadAllText(Path.Combine(backups[0], "awg", "awg0.conf")) == confBefore, string.Join(",", backups));
+Check("подключения Ивана на месте", PeerCount() == 4 && ivanRow!["devices"]!.AsArray().All(d => Conf().Contains(d!["ip"]!.GetValue<string>() + "/32")), Conf());
+Check("устройство из API появилось на сервере", Conf().Contains(devIp + "/32"), devIp);
 var limits = File.ReadAllText(MayakServer.LimitsPath);
 Check("лимит нового устройства применён", limits.Contains(devIp + " 35000 35000"), limits);
 
@@ -102,6 +114,32 @@ await admin.DeleteAsync($"/api/admin/devices/{dev["device"]!["id"]}");
 await agent.CycleAsync(CancellationToken.None);
 Check("удалённое в API устройство отозвано на сервере", !Conf().Contains(devIp + "/32") && PeerCount() == 3);
 Check("служебная учётка проверки не тронута", PeerCount() == 3);
+
+Console.WriteLine("Устройство, добавленное на сервер мимо API (Маяк для Windows):");
+using (var shell = new LocalShell("/root/.mayak_agent_tmp"))
+{
+    var win = new MayakServer(shell, "127.0.0.1");
+    win.Connect();
+    var snap = win.Load();
+    var petr = new VpnUser { Name = "Пётр" };
+    snap.Db.Users.Add(petr);
+    win.Save(snap);
+    win.AddDevice(snap, petr, "Mac", DeviceKind.Mac, 35, 35);
+}
+int withPetr = PeerCount();
+await admin.PatchAsJsonAsync($"/api/admin/accounts/{mama["id"]}", new { note = "ревизия" });
+await agent.CycleAsync(CancellationToken.None);
+accounts = await admin.GetFromJsonAsync<JsonArray>("/api/admin/accounts");
+var petrRow = accounts!.FirstOrDefault(a => a!["account"]!["name"]!.GetValue<string>() == "Пётр");
+Check("агент перенёс его в API, а не отозвал", petrRow?["devices"]?.AsArray().Count == 1 && PeerCount() == withPetr, Conf());
+await admin.DeleteAsync($"/api/admin/devices/{petrRow!["devices"]![0]!["id"]}");
+await agent.CycleAsync(CancellationToken.None);
+Check("удалённое в API — отозвано", PeerCount() == withPetr - 1);
+var restarted = AgentFor(created["agentToken"]!.GetValue<string>());
+await restarted.CycleAsync(CancellationToken.None);
+accounts = await admin.GetFromJsonAsync<JsonArray>("/api/admin/accounts");
+petrRow = accounts!.FirstOrDefault(a => a!["account"]!["name"]!.GetValue<string>() == "Пётр");
+Check("после перезапуска агента удалённое не возвращается", (petrRow?["devices"]?.AsArray().Count ?? 0) == 0 && PeerCount() == withPetr - 1);
 
 Console.WriteLine("Защита от сбоя API:");
 var ivanDevices = ivanRow!["devices"]!.AsArray().Select(d => d!["id"]!.GetValue<Guid>()).ToList();
@@ -137,6 +175,8 @@ await using (var conn = new NpgsqlConnection($"{pg};Database=postgres"))
     await conn.OpenAsync();
     await new NpgsqlCommand($"DROP DATABASE IF EXISTS {dbName} WITH (FORCE)", conn).ExecuteNonQueryAsync();
 }
+
+try { Directory.Delete(stateDir, true); } catch (IOException) { }
 
 Console.WriteLine();
 Console.WriteLine($"Итого: {passed} OK, {failed} ошибок");

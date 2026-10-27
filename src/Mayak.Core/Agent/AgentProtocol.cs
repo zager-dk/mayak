@@ -98,6 +98,9 @@ public sealed class AgentReport
     public List<AgentPeerStats> Peers { get; set; } = new();
     public List<string> ReservedIps { get; set; } = new();
     public List<string> Warnings { get; set; } = new();
+    /// <summary>Агент в пробном режиме: показывает, что изменил бы, но сервер не трогает.</summary>
+    public bool DryRun { get; set; }
+    public DateTime? At { get; set; }
 }
 
 public sealed class AgentPeerStats

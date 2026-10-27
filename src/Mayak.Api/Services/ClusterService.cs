@@ -123,30 +123,47 @@ public sealed class ClusterService
         return state;
     }
 
-    /// <summary>Переносит пользователей Маяка для Windows с выхода в API (один раз, пока устройств нет).</summary>
+    /// <summary>
+    /// Переносит в API людей и устройства, которых на выходе завёл Маяк для Windows.
+    /// Безопасно повторять: устройство с уже известным ключом пропускается, ключи и адреса не меняются —
+    /// выданные файлы продолжают работать. Так ни одно подключение с сервера не потеряется,
+    /// даже если в API уже есть другие устройства.
+    /// </summary>
     public async Task<int> ImportLegacyAsync(MayakDatabase legacy, CancellationToken ct)
     {
-        if (await _db.Devices.AnyAsync(ct)) return 0;
+        var knownKeys = (await _db.Devices.Select(d => d.AwgPublicKey).ToListAsync(ct)).ToHashSet();
+        var usedIps = (await _db.Devices.Select(d => d.Ip).ToListAsync(ct)).ToHashSet();
         int count = 0;
         foreach (var u in legacy.Users)
         {
-            var acc = new Account
+            var fresh = u.Devices.Where(d => !string.IsNullOrEmpty(d.PublicKey) && !string.IsNullOrEmpty(d.Ip) && !knownKeys.Contains(d.PublicKey)).ToList();
+            if (fresh.Count == 0) continue;
+
+            var acc = await _db.Accounts.FirstOrDefaultAsync(a => a.Id == u.Id, ct)
+                      ?? await _db.Accounts.FirstOrDefaultAsync(a => a.Legacy && a.Name == u.Name, ct);
+            if (acc == null)
             {
-                Id = u.Id,
-                Name = u.Name,
-                Note = u.Note,
-                Enabled = u.Enabled,
-                Legacy = true,
-                MaxDevices = Math.Max(3, u.Devices.Count),
-                DownMbps = legacy.DefaultDownMbps,
-                UpMbps = legacy.DefaultUpMbps,
-                CreatedAt = DateTime.SpecifyKind(u.CreatedAt, DateTimeKind.Utc),
-            };
-            foreach (var d in u.Devices.Where(d => !string.IsNullOrEmpty(d.PublicKey) && !string.IsNullOrEmpty(d.Ip)))
+                acc = new Account
+                {
+                    Id = u.Id,
+                    Name = u.Name,
+                    Note = u.Note,
+                    Enabled = u.Enabled,
+                    Legacy = true,
+                    MaxDevices = Math.Max(3, u.Devices.Count),
+                    DownMbps = legacy.DefaultDownMbps,
+                    UpMbps = legacy.DefaultUpMbps,
+                    CreatedAt = DateTime.SpecifyKind(u.CreatedAt, DateTimeKind.Utc),
+                };
+                _db.Accounts.Add(acc);
+            }
+            foreach (var d in fresh)
             {
-                acc.Devices.Add(new Device
+                if (usedIps.Contains(d.Ip)) continue; // адрес занят другим ключом — такого быть не должно, не трогаем
+                _db.Devices.Add(new Device
                 {
                     Id = d.Id,
+                    AccountId = acc.Id,
                     Name = d.Name,
                     Kind = d.Kind,
                     AwgPublicKey = d.PublicKey,
@@ -158,10 +175,12 @@ public sealed class ClusterService
                     UpMbps = d.UpMbps == legacy.DefaultUpMbps ? null : d.UpMbps,
                     CreatedAt = DateTime.SpecifyKind(d.CreatedAt, DateTimeKind.Utc),
                 });
+                knownKeys.Add(d.PublicKey);
+                usedIps.Add(d.Ip);
                 count++;
             }
-            _db.Accounts.Add(acc);
         }
+        if (count == 0) return 0;
         await _db.SaveChangesAsync(ct);
         await BumpAsync(ct);
         return count;
