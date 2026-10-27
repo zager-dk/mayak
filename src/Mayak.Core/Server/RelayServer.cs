@@ -34,7 +34,7 @@ public sealed record RelayStatus(bool Installed, string TargetHost, string Forwa
 public sealed class RelayServer : IDisposable
 {
     private readonly SshCredentials _creds;
-    private readonly SshConnection _ssh;
+    private readonly IShell _ssh;
 
     public event Action<string>? Log;
     public string? Fingerprint => _ssh.ServerFingerprint;
@@ -43,6 +43,13 @@ public sealed class RelayServer : IDisposable
     {
         _creds = creds;
         _ssh = new SshConnection(creds);
+    }
+
+    /// <summary>Управление через готовую оболочку (агент на самом входе).</summary>
+    public RelayServer(IShell shell, int ownSshPort = 22)
+    {
+        _creds = new SshCredentials { Host = "localhost", Port = ownSshPort };
+        _ssh = shell;
     }
 
     private string S => _ssh.Sudo;

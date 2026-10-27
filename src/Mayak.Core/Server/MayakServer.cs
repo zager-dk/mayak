@@ -42,6 +42,9 @@ public sealed class InstallOptions
 }
 
 /// <summary>Состояние сервера, прочитанное за одно подключение.</summary>
+/// <summary>Итог синхронизации с API: сколько пиров добавлено и отозвано, сколько всего на сервере.</summary>
+public sealed record DesiredStateResult(int Added, int Removed, int Total);
+
 /// <summary>Результат выдачи по списку: устройство и было ли оно создано сейчас.</summary>
 public sealed record GrantItem(VpnUser User, VpnDevice Device, bool Created);
 
@@ -93,7 +96,7 @@ public sealed partial class MayakServer : IDisposable
     };
 
     private readonly SshCredentials _creds;
-    private readonly SshConnection _ssh;
+    private readonly IShell _ssh;
 
     public event Action<string>? Log;
 
@@ -104,6 +107,13 @@ public sealed partial class MayakServer : IDisposable
     {
         _creds = creds;
         _ssh = new SshConnection(creds);
+    }
+
+    /// <summary>Управление через готовую оболочку (агент на самом сервере). publicHost — адрес для клиентов по умолчанию.</summary>
+    public MayakServer(IShell shell, string publicHost)
+    {
+        _creds = new SshCredentials { Host = publicHost };
+        _ssh = shell;
     }
 
     public void Connect()
@@ -564,6 +574,33 @@ public sealed partial class MayakServer : IDisposable
         }
         if (changed) WriteConfAndSync(conf);
         snap.PeersOnServer = conf.Peers.Select(p => p.PublicKey).ToHashSet();
+    }
+
+    /// <summary>
+    /// Приводит сервер к состоянию, присланному API: пользователи и устройства заменяются целиком,
+    /// пиры удалённых устройств отзываются, новые добавляются, лимиты и Xray обновляются.
+    /// Служебная учётка проверки и подключения, созданные не Маяком, не трогаются.
+    /// </summary>
+    public DesiredStateResult ApplyDesiredState(ServerSnapshot snap, IReadOnlyList<VpnUser> users, int defaultDownMbps, int defaultUpMbps)
+    {
+        var wanted = users.SelectMany(u => u.Devices).Select(d => d.PublicKey).ToHashSet();
+        var gone = snap.Db.AllDevices.Where(d => !wanted.Contains(d.PublicKey)).Select(d => d.PublicKey).ToList();
+
+        var conf = ReadConf();
+        int removed = 0;
+        foreach (var key in gone)
+            if (conf.RemovePeer(key)) removed++;
+        if (removed > 0) WriteConfAndSync(conf);
+        foreach (var key in gone) RemoveFromClientsTable(key);
+
+        var before = conf.Peers.Select(p => p.PublicKey).ToHashSet();
+        snap.Db.Users = users.ToList();
+        snap.Db.DefaultDownMbps = defaultDownMbps;
+        snap.Db.DefaultUpMbps = defaultUpMbps;
+        SyncPeers(snap);
+        Commit(snap);
+        int added = snap.PeersOnServer.Count(k => !before.Contains(k));
+        return new DesiredStateResult(added, removed, snap.PeersOnServer.Count);
     }
 
     /// <summary>База + clientsTable + лимиты.</summary>

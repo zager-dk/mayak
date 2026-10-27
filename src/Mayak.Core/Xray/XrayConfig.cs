@@ -84,6 +84,14 @@ public static class XrayConfig
         return arr;
     }
 
+    /// <summary>Закрытый ключ Reality из server.json.</summary>
+    public static string? ReadRealityPrivateKey(string json)
+    {
+        var root = JsonNode.Parse(json)?.AsObject();
+        var inbound = root?["inbounds"]?.AsArray().FirstOrDefault()?.AsObject();
+        return inbound?["streamSettings"]?["realitySettings"]?["privateKey"]?.GetValue<string>();
+    }
+
     /// <summary>Читает параметры из server.json (в том числе созданного официальным AmneziaVPN).</summary>
     public static XrayEndpoint ParseServerJson(string json, string publicKey)
     {

@@ -36,8 +36,28 @@ public class MayakException : Exception
     public MayakException(string message, Exception? inner = null) : base(message, inner) { }
 }
 
+/// <summary>
+/// Где выполняются команды сервера: по SSH с компьютера администратора (Маяк для Windows)
+/// или прямо на сервере (агент). Логика установки и управления одна и та же.
+/// </summary>
+public interface IShell : IDisposable
+{
+    /// <summary>Пусто для root, «sudo -n » для остальных.</summary>
+    string Sudo { get; }
+    bool IsRoot { get; }
+    string? ServerFingerprint { get; }
+    string? JumpFingerprint { get; }
+    void Connect();
+    bool IsAlive();
+    CommandResult Run(string command, TimeSpan? timeout = null);
+    string RunChecked(string command, string what, TimeSpan? timeout = null);
+    string UploadTemp(string content, string suffix = "");
+    void WriteHostFile(string content, string remotePath, string mode = "644");
+    CommandResult RunScript(string script, TimeSpan timeout);
+}
+
 /// <summary>Обёртка над SSH.NET: команды, загрузка файлов, sudo.</summary>
-public sealed class SshConnection : IDisposable
+public sealed class SshConnection : IShell
 {
     private readonly SshCredentials _creds;
     private SshClient? _ssh;

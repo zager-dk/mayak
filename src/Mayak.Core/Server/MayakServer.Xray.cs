@@ -55,6 +55,23 @@ public sealed partial class MayakServer
         }
     }
 
+    /// <summary>
+    /// Закрытые ключи сервера (AmneziaWG и Reality): нужны API, чтобы ставить другие выходы клонами этого.
+    /// Вызывается только агентом на самом сервере.
+    /// </summary>
+    public (string AwgPrivateKey, string? XrayPrivateKey) ReadServerSecrets()
+    {
+        var conf = ReadConf();
+        var awg = conf.GetInterfaceValue("PrivateKey") ?? throw new MayakException("В awg0.conf нет PrivateKey.");
+        string? xray = null;
+        if (GetXrayState() == ServerState.Running)
+        {
+            var json = ReadContainerFile(XrayServerJson, XrayContainer);
+            if (!string.IsNullOrWhiteSpace(json)) xray = XrayConfig.ReadRealityPrivateKey(json);
+        }
+        return (awg, xray);
+    }
+
     /// <summary>Устанавливает Xray рядом с AmneziaWG и выдаёт его всем активным устройствам.</summary>
     public void InstallXray(ServerSnapshot snap, XrayInstallOptions opt, bool reinstall, Action<string>? step = null)
     {
