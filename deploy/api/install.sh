@@ -115,6 +115,12 @@ else
 fi
 chown root:mayak "$CONF"
 chmod 640 "$CONF"
+# Ключ шлюза для приложения Маяк: открытая часть вшивается в приложение при сборке. Не пересоздаётся.
+if [ ! -f /etc/mayak/gateway.pem ]; then
+  openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out /etc/mayak/gateway.pem 2>/dev/null
+fi
+chown root:mayak /etc/mayak/gateway.pem
+chmod 640 /etc/mayak/gateway.pem
 
 say "Служба mayak-api"
 rm -rf /opt/mayak/api.old
@@ -179,6 +185,7 @@ cat <<DONE
      Первый вошедший станет владельцем — войдите сразу.
   2. «Серверы» → «+ Сервер»: добавьте выход (на нём уже стоит VPN Маяка)
      и выполните на нём показанную команду — агент перенесёт людей в API.
+  3. Личный кабинет для людей: https://$DOMAIN/my/
 
 Обслуживание: mayak-api servers · журнал: journalctl -u mayak-api -f
 Обновление: запустите эту же команду ещё раз.

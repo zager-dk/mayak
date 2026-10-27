@@ -49,7 +49,7 @@ public sealed class AgentRunner
     public AgentRunner(AgentConfig cfg, HttpClient? http = null, Func<IShell>? shell = null, Action<string>? log = null)
     {
         _cfg = cfg;
-        _http = http ?? new HttpClient { BaseAddress = new Uri(cfg.Api.TrimEnd('/') + "/"), Timeout = TimeSpan.FromSeconds(30) };
+        _http = http ?? new HttpClient { BaseAddress = new Uri(cfg.Api.TrimEnd('/') + "/"), Timeout = TimeSpan.FromSeconds(60) };
         _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", cfg.Token);
         _shell = shell ?? (() => new LocalShell());
         _log = log ?? (m => Console.WriteLine(m));
@@ -64,7 +64,12 @@ public sealed class AgentRunner
             int wait = 30;
             try
             {
-                wait = await CycleAsync(ct);
+                var started = DateTime.UtcNow;
+                long before = _seenRevision;
+                wait = await CycleAsync(ct, longPoll: true);
+                // API ждал изменений и ответил по событию — сразу идём снова.
+                // Старый API без длинного опроса отвечает мгновенно — тогда ждём как раньше.
+                if (_seenRevision != before || DateTime.UtcNow - started > TimeSpan.FromSeconds(5)) wait = 1;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
             catch (Exception ex)
@@ -72,16 +77,17 @@ public sealed class AgentRunner
                 _log("Ошибка: " + ex.Message);
                 wait = 30;
             }
-            try { await Task.Delay(TimeSpan.FromSeconds(Math.Clamp(wait, 5, 600)), ct); }
+            try { await Task.Delay(TimeSpan.FromSeconds(Math.Clamp(wait, 1, 600)), ct); }
             catch (OperationCanceledException) { break; }
         }
     }
 
     /// <summary>Один проход. Возвращает, через сколько секунд прийти снова.</summary>
-    public async Task<int> CycleAsync(CancellationToken ct)
+    public async Task<int> CycleAsync(CancellationToken ct, bool longPoll = false)
     {
         if (!_helloDone) await HelloAsync(ct);
-        var state = await GetStateAsync(ct);
+        var state = await GetStateAsync(ct, longPoll && _seenRevision > 0 ? _seenRevision : null);
+        _seenRevision = state.Revision;
         Role = state.Role;
         AgentReport report;
         if (Role == "entry")
@@ -105,8 +111,11 @@ public sealed class AgentRunner
         return state.PollSeconds;
     }
 
-    private async Task<AgentState> GetStateAsync(CancellationToken ct) =>
-        await _http.GetFromJsonAsync<AgentState>(AgentPaths.State, Json, ct) ?? throw new InvalidOperationException("API вернул пустое состояние");
+    private long _seenRevision;
+
+    private async Task<AgentState> GetStateAsync(CancellationToken ct, long? since = null) =>
+        await _http.GetFromJsonAsync<AgentState>(since == null ? AgentPaths.State : $"{AgentPaths.State}?since={since}&wait=25", Json, ct)
+        ?? throw new InvalidOperationException("API вернул пустое состояние");
 
     private string SeenPath => Path.Combine(_cfg.StateDir, "seen-devices.txt");
 

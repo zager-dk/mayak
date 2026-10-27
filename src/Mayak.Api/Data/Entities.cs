@@ -42,6 +42,12 @@ public sealed class Account
     /// <summary>Перенесён из Маяка для Windows (у его устройств есть приватные ключи для повторной выдачи файла).</summary>
     public bool Legacy { get; set; }
 
+    /// <summary>
+    /// Ключ подписки для приложения Маяк (auth_data.api_key протокола шлюза). Приложение само создаёт
+    /// ключ устройства и получает настройки по нему. null — ещё не выдавался.
+    /// </summary>
+    public string? AppKey { get; set; }
+
     public List<Device> Devices { get; set; } = new();
 
     public bool IsActive(DateTime now) => Enabled && (PaidUntil == null || PaidUntil > now);
@@ -64,7 +70,12 @@ public sealed class Device
     /// <summary>Свой лимит устройства, Мбит/с; null — по тарифу аккаунта.</summary>
     public int? DownMbps { get; set; }
     public int? UpMbps { get; set; }
+    /// <summary>Установка приложения Маяк (installation_uuid) — у устройств, подключённых через приложение.</summary>
     public string? InstallationId { get; set; }
+    public string? OsVersion { get; set; }
+    public string? AppVersion { get; set; }
+    /// <summary>Когда приложение последний раз получало настройки.</summary>
+    public DateTime? ConfigFetchedAt { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? LastHandshake { get; set; }
     public long RxBytes { get; set; }
@@ -135,6 +146,23 @@ public sealed class LoginRequest
     public string? TelegramName { get; set; }
     public Guid? AccountId { get; set; }
     public bool Consumed { get; set; }
+    /// <summary>Хеш кода приглашения, если человек пришёл по ссылке из админки.</summary>
+    public string? InviteHash { get; set; }
+}
+
+/// <summary>
+/// Приглашение: ссылка, по которой человек входит через Telegram и получает уже заведённый аккаунт
+/// (например, перенесённый из Маяка для Windows — со всеми устройствами). Одноразовое.
+/// </summary>
+public sealed class Invite
+{
+    public string CodeHash { get; set; } = "";
+    public Guid AccountId { get; set; }
+    public Account? Account { get; set; }
+    public Guid? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime ExpiresAt { get; set; } = DateTime.UtcNow.AddDays(14);
+    public DateTime? UsedAt { get; set; }
 }
 
 /// <summary>Сеанс приложения: хранится только хеш токена.</summary>

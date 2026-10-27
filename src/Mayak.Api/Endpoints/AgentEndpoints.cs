@@ -34,9 +34,21 @@ public static class AgentEndpoints
             return Results.Ok(new AgentHelloReply { ServerId = server.Id, Name = server.Name, Role = server.Role, ImportedDevices = imported });
         });
 
-        g.MapGet(AgentPaths.State, async (HttpContext http, MayakDb db, ClusterService cluster) =>
+        // ?since=<ревизия>&wait=<сек>: если ничего не менялось, ответ ждёт изменения (длинный опрос) —
+        // новое устройство из приложения попадает на сервер за секунды, а не за полминуты.
+        g.MapGet(AgentPaths.State, async (long? since, int? wait, HttpContext http, MayakDb db, ClusterService cluster) =>
         {
             var server = http.AgentServer();
+            if (since != null && wait is > 0)
+            {
+                var next = ClusterService.Changes.Next;
+                var rev = await db.Cluster.Where(c => c.Id == 1).Select(c => (long?)c.Revision).FirstOrDefaultAsync();
+                if (rev == since)
+                {
+                    try { await next.WaitAsync(TimeSpan.FromSeconds(Math.Min(wait.Value, 50)), http.RequestAborted); }
+                    catch (TimeoutException) { }
+                }
+            }
             server.LastSeen = DateTime.UtcNow;
             await db.SaveChangesAsync();
             return Results.Ok(await cluster.StateForAsync(server, http.RequestAborted));

@@ -3,6 +3,7 @@ using System.Threading.RateLimiting;
 using Mayak.Api;
 using Mayak.Api.Data;
 using Mayak.Api.Endpoints;
+using Mayak.Api.Gateway;
 using Mayak.Api.Services;
 using Mayak.Api.Telegram;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -24,10 +25,14 @@ var agentInstallUrl = cfg["AgentInstallUrl"] ?? publicUrl + "/download/install-a
 // Сюда установщик кладёт собранного агента и его установочный скрипт; API раздаёт их серверам.
 var distDir = cfg["DistDir"] ?? "/opt/mayak/dist";
 var tgOptions = cfg.GetSection("Telegram").Get<TelegramOptions>() ?? new TelegramOptions();
+// Кабинет — по отдельному адресу; главная страница домена остаётся нейтральной.
+tgOptions.SiteUrl ??= publicUrl + "/my/";
 
 builder.Services.AddDbContext<MayakDb>(o => o.UseNpgsql(connectionString));
 builder.Services.AddScoped<ClusterService>();
 builder.Services.AddSingleton(tgOptions);
+// Ключ шлюза для приложения Маяк; создаёт установщик (openssl), без него шлюз выключен.
+builder.Services.AddSingleton(new GatewayKeys(cfg["Gateway:PrivateKeyPath"] ?? "/etc/mayak/gateway.pem"));
 builder.Services.AddSingleton<TelegramClient>();
 if (cfg.GetValue("Telegram:Polling", true)) builder.Services.AddHostedService<TelegramBotService>();
 builder.Services.ConfigureHttpJsonOptions(o =>
@@ -72,6 +77,7 @@ app.MapGet("/health", () => Results.Ok(new { ok = true, version = typeof(Program
 AppEndpoints.Map(app);
 AdminEndpoints.Map(app, publicUrl, agentInstallUrl);
 AgentEndpoints.Map(app);
+GatewayEndpoints.Map(app);
 
 app.Run();
 return 0;

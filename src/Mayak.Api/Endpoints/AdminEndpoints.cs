@@ -1,5 +1,6 @@
 using Mayak.Api.Data;
 using Mayak.Api.Services;
+using Mayak.Api.Telegram;
 using Mayak.Core.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -68,7 +69,7 @@ public static class AdminEndpoints
             return Results.Ok(AppEndpoints.AccountView(acc));
         });
 
-        g.MapPatch("/accounts/{id:guid}", async (Guid id, AccountPatch body, HttpContext http, MayakDb db, ClusterService cluster) =>
+        g.MapPatch("/accounts/{id:guid}", async (Guid id, AccountPatch body, HttpContext http, MayakDb db, ClusterService cluster, TelegramClient tg, TelegramOptions tgOpt) =>
         {
             var acc = await db.Accounts.FirstOrDefaultAsync(a => a.Id == id);
             if (acc == null) return Results.NotFound();
@@ -81,6 +82,7 @@ public static class AdminEndpoints
             }
             if (body.Name != null) acc.Name = body.Name.Trim();
             if (body.Note != null) acc.Note = body.Note.Trim();
+            bool approved = body.Enabled == true && !acc.Enabled;
             if (body.Enabled != null) acc.Enabled = body.Enabled.Value;
             if (body.ClearPaidUntil == true) acc.PaidUntil = null;
             else if (body.PaidUntil != null) acc.PaidUntil = body.PaidUntil.Value.ToUniversalTime();
@@ -90,7 +92,26 @@ public static class AdminEndpoints
             Audit(db, http, "account.update", $"{acc.Id} {acc.Name}");
             await db.SaveChangesAsync();
             await cluster.BumpAsync();
+            if (approved && acc.TelegramId is long tid && tg.Enabled)
+            {
+                try { await tg.SendAsync(tid, $"Доступ к Маяку одобрен — можно подключаться.\nКлюч для приложения: {tgOpt.SiteUrl}", http.RequestAborted); }
+                catch (Exception) { /* сообщение не критично */ }
+            }
             return Results.Ok(AppEndpoints.AccountView(acc));
+        });
+
+        // Ссылка-приглашение: человек входит по ней через Telegram и получает этот аккаунт со всеми устройствами.
+        g.MapPost("/accounts/{id:guid}/invite", async (Guid id, HttpContext http, MayakDb db) =>
+        {
+            var acc = await db.Accounts.FirstOrDefaultAsync(a => a.Id == id);
+            if (acc == null) return Results.NotFound();
+            if (acc.TelegramId != null) return Results.BadRequest(new { error = "Этот человек уже входит через Telegram — ему достаточно открыть сайт." });
+            await db.Invites.Where(i => i.AccountId == id && i.UsedAt == null).ExecuteDeleteAsync();
+            var code = Tokens.New(12);
+            db.Invites.Add(new Invite { CodeHash = Tokens.Hash(code), AccountId = id, CreatedBy = http.Me().Id });
+            Audit(db, http, "invite.create", acc.Name);
+            await db.SaveChangesAsync();
+            return Results.Ok(new { url = $"{publicUrl}/my/?invite={code}", expiresInDays = 14 });
         });
 
         admin.MapDelete("/accounts/{id:guid}", async (Guid id, HttpContext http, MayakDb db, ClusterService cluster) =>
@@ -285,6 +306,15 @@ public static class AdminEndpoints
             await db.SaveChangesAsync();
             return Results.Ok(new { c.Revision });
         });
+
+        // Что вшить в приложение Маяк при сборке: адрес шлюза и открытый ключ.
+        admin.MapGet("/gateway", (Mayak.Api.Gateway.GatewayKeys keys) => Results.Ok(new
+        {
+            ready = keys.Rsa != null,
+            endpoint = publicUrl + Mayak.Api.Gateway.GatewayEndpoints.Prefix,
+            publicKey = keys.PublicPem,
+            keyPath = keys.Path,
+        }));
 
         admin.MapGet("/audit", async (MayakDb db) =>
             Results.Ok(await db.Audit.OrderByDescending(a => a.Id).Take(200).ToListAsync()));

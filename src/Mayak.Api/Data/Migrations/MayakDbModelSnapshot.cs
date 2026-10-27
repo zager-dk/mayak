@@ -28,6 +28,9 @@ namespace Mayak.Api.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("AppKey")
+                        .HasColumnType("text");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -72,6 +75,9 @@ namespace Mayak.Api.Data.Migrations
                         .HasColumnType("integer");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("AppKey")
+                        .IsUnique();
 
                     b.HasIndex("Email")
                         .IsUnique();
@@ -161,12 +167,18 @@ namespace Mayak.Api.Data.Migrations
                     b.Property<Guid>("AccountId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("AppVersion")
+                        .HasColumnType("text");
+
                     b.Property<string>("AwgPrivateKey")
                         .HasColumnType("text");
 
                     b.Property<string>("AwgPublicKey")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<DateTime?>("ConfigFetchedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -196,6 +208,9 @@ namespace Mayak.Api.Data.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("OsVersion")
+                        .HasColumnType("text");
+
                     b.Property<long>("RxBytes")
                         .HasColumnType("bigint");
 
@@ -211,15 +226,42 @@ namespace Mayak.Api.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("AccountId");
-
                     b.HasIndex("AwgPublicKey")
                         .IsUnique();
 
                     b.HasIndex("Ip")
                         .IsUnique();
 
+                    b.HasIndex("AccountId", "InstallationId");
+
                     b.ToTable("Devices");
+                });
+
+            modelBuilder.Entity("Mayak.Api.Data.Invite", b =>
+                {
+                    b.Property<string>("CodeHash")
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("UsedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("CodeHash");
+
+                    b.HasIndex("AccountId");
+
+                    b.ToTable("Invites");
                 });
 
             modelBuilder.Entity("Mayak.Api.Data.LoginRequest", b =>
@@ -236,6 +278,9 @@ namespace Mayak.Api.Data.Migrations
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("InviteHash")
+                        .HasColumnType("text");
 
                     b.Property<long?>("TelegramId")
                         .HasColumnType("bigint");
@@ -351,6 +396,17 @@ namespace Mayak.Api.Data.Migrations
                 {
                     b.HasOne("Mayak.Api.Data.Account", "Account")
                         .WithMany("Devices")
+                        .HasForeignKey("AccountId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Account");
+                });
+
+            modelBuilder.Entity("Mayak.Api.Data.Invite", b =>
+                {
+                    b.HasOne("Mayak.Api.Data.Account", "Account")
+                        .WithMany()
                         .HasForeignKey("AccountId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();

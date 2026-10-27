@@ -46,6 +46,17 @@ public sealed class ClusterService
     public async Task BumpAsync(CancellationToken ct = default)
     {
         await _db.Cluster.Where(c => c.Id == 1).ExecuteUpdateAsync(s => s.SetProperty(c => c.Revision, c => c.Revision + 1), ct);
+        Changes.Signal();
+    }
+
+    /// <summary>Сигнал «что-то изменилось» для агентов, ждущих в длинном опросе.</summary>
+    public static readonly ChangeSignal Changes = new();
+
+    public sealed class ChangeSignal
+    {
+        private TaskCompletionSource _tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public Task Next => Volatile.Read(ref _tcs).Task;
+        public void Signal() => Interlocked.Exchange(ref _tcs, new(TaskCreationOptions.RunContinuationsAsynchronously)).TrySetResult();
     }
 
     /// <summary>Адрес для пользователей: вход/домен из настроек, иначе активный выход.</summary>
@@ -205,6 +216,29 @@ public sealed class ClusterService
         await _db.SaveChangesAsync(ct);
         await BumpAsync(ct);
         return d;
+    }
+
+    /// <summary>Всё, что нужно человеку, чтобы подключить устройство в готовых приложениях.</summary>
+    public sealed record DeviceFiles(string VpnKey, string Conf, string ConfName, string? Vless, string QrConf, string? QrVless);
+
+    public async Task<DeviceFiles> BuildDeviceFilesAsync(Device d, Account acc, CancellationToken ct)
+    {
+        var (key, conf) = await BuildFilesAsync(d, acc, ct);
+        var c = (await GetAsync(ct))!;
+        var xray = XrayOf(c);
+        string? vless = null;
+        if (xray != null && !string.IsNullOrEmpty(d.XrayId))
+            vless = Mayak.Core.Xray.XrayConfig.BuildVlessLink(await PublicHostAsync(c, ct), xray, d.XrayId, $"{c.Title} · {d.Name}");
+        static string Qr(string text) => "data:image/png;base64," + Convert.ToBase64String(Mayak.Core.Export.QrImages.Png(text, 6));
+        var confName = Mayak.Core.Export.Transliteration.ToTunnelName("mayak-" + d.Name) + ".conf";
+        return new DeviceFiles(key, conf, confName, vless, Qr(conf), vless == null ? null : Qr(vless));
+    }
+
+    /// <summary>Город активного выхода — для карточки в кабинете и приложении.</summary>
+    public async Task<object?> LocationAsync(CancellationToken ct)
+    {
+        var s = await _db.Servers.Where(x => x.Role == ServerRoles.Exit && x.Active).FirstOrDefaultAsync(ct);
+        return s == null ? null : new { s.City, s.Country, s.CountryCode, s.Fact, s.PhotoUrl, online = s.LastSeen > DateTime.UtcNow.AddMinutes(-3) };
     }
 
     /// <summary>Конфигурация для приложения AmneziaVPN/AmneziaWG по сохранённому ключу устройства.</summary>

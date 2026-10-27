@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0E1A2B">
+<title>Маяк · кабинет</title>
+<style>
+  :root {
+    --navy: #0E1A2B; --navy2: #17263B; --amber: #F5A524; --amber-d: #D98B0B;
+    --page: #F3F5F8; --card: #FFFFFF; --line: #E2E6EC; --text: #1B2533; --muted: #667387;
+    --green: #1F9D55; --red: #D64545; --soft: #F7F8FA;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --page: #0A111C; --card: #121C2B; --line: #223047; --text: #E6EBF2; --muted: #8B99AD; --soft: #0F1825; }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--page); color: var(--text); }
+  a { color: inherit; }
+  header { background: var(--navy); color: #fff; padding: 14px 16px; padding-top: max(14px, env(safe-area-inset-top)); }
+  header .in { max-width: 640px; margin: 0 auto; display: flex; align-items: center; gap: 10px; }
+  header .brand { display: flex; align-items: center; gap: 9px; font-weight: 650; font-size: 17px; letter-spacing: .2px; }
+  header .who { margin-left: auto; font-size: 13px; color: #B9C5D6; display: flex; gap: 10px; align-items: center; }
+  header .who a { color: var(--amber); text-decoration: none; }
+  main { max-width: 640px; margin: 0 auto; padding: 16px 16px 48px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; margin-bottom: 14px; }
+  h1 { font-size: 22px; line-height: 1.25; margin: 0 0 8px; }
+  h2 { font-size: 17px; margin: 0 0 12px; }
+  h3 { font-size: 15px; margin: 18px 0 8px; }
+  p { margin: 0 0 10px; }
+  .muted { color: var(--muted); font-size: 13.5px; }
+  .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .grow { flex: 1; min-width: 0; }
+  .btn { font: inherit; font-weight: 600; border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 10px;
+         padding: 11px 16px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; }
+  .btn.p { background: var(--amber); border-color: var(--amber-d); color: #1B1405; }
+  .btn.tg { background: #2AABEE; border-color: #1E96D1; color: #fff; }
+  .btn.w { width: 100%; }
+  .btn.s { padding: 6px 11px; min-height: 34px; font-size: 13.5px; font-weight: 550; }
+  .btn.d { color: var(--red); }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .link { background: none; border: 0; padding: 0; font: inherit; color: var(--muted); text-decoration: underline; cursor: pointer; }
+  .hero { text-align: center; padding: 28px 20px; }
+  .hero svg { margin-bottom: 8px; }
+  .city { background: linear-gradient(160deg, var(--navy) 0%, #213656 100%); color: #fff; border: 0; position: relative; overflow: hidden; }
+  .city.photo { background-size: cover; background-position: center; }
+  .city.photo::before { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(14,26,43,.15), rgba(14,26,43,.85)); }
+  .city > * { position: relative; }
+  .city .label { font-size: 12.5px; color: #C9D3E0; text-transform: uppercase; letter-spacing: .8px; }
+  .city .name { font-size: 24px; font-weight: 700; margin: 2px 0 6px; }
+  .city .fact { color: #DCE3EC; font-size: 14px; }
+  .status { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: #DCE3EC; margin-top: 10px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #9AA6B6; flex: none; }
+  .dot.on { background: #3DD17F; }
+  .dev { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
+  .dev:first-of-type { border-top: 0; }
+  .ico { width: 40px; height: 40px; border-radius: 10px; background: var(--soft); border: 1px solid var(--line); display: grid; place-items: center; flex: none; }
+  .platforms { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
+  .platforms button { font: inherit; background: var(--card); color: var(--text); border: 1.5px solid var(--line); border-radius: 12px; padding: 14px 10px; cursor: pointer;
+                      display: flex; flex-direction: column; align-items: center; gap: 6px; font-weight: 600; }
+  .platforms button.on { border-color: var(--amber); background: rgba(245,165,36,.08); }
+  .tabs { display: flex; gap: 6px; margin: 4px 0 14px; flex-wrap: wrap; }
+  .tabs button { font: inherit; font-size: 14px; border: 1px solid var(--line); background: var(--card); color: var(--muted); border-radius: 999px; padding: 6px 13px; cursor: pointer; }
+  .tabs button.on { background: var(--navy); border-color: var(--navy); color: #fff; }
+  @media (prefers-color-scheme: dark) { .tabs button.on { background: var(--amber); border-color: var(--amber); color: #1B1405; } }
+  ol.steps { margin: 0; padding: 0; list-style: none; counter-reset: s; }
+  ol.steps > li { counter-increment: s; position: relative; padding: 0 0 16px 40px; }
+  ol.steps > li::before { content: counter(s); position: absolute; left: 0; top: -1px; width: 28px; height: 28px; border-radius: 50%; background: var(--soft); border: 1px solid var(--line);
+                          display: grid; place-items: center; font-weight: 700; font-size: 13.5px; }
+  ol.steps > li:last-child { padding-bottom: 0; }
+  .key { font: 12px/1.45 ui-monospace, "Cascadia Mono", Consolas, monospace; background: var(--soft); border: 1px solid var(--line); border-radius: 10px; padding: 10px;
+         word-break: break-all; max-height: 96px; overflow: auto; margin: 8px 0; user-select: all; }
+  .qr { display: block; width: 220px; max-width: 100%; height: auto; image-rendering: pixelated; background: #fff; padding: 10px; border-radius: 12px; border: 1px solid var(--line); margin: 8px 0; }
+  .note { background: rgba(245,165,36,.1); border: 1px solid rgba(245,165,36,.35); border-radius: 10px; padding: 10px 12px; font-size: 13.5px; }
+  .err { color: var(--red); }
+  input { font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; width: 100%; min-height: 44px; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+  #toast { position: fixed; left: 50%; bottom: max(20px, env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--navy); color: #fff;
+           padding: 10px 16px; border-radius: 10px; display: none; z-index: 9; font-size: 14px; box-shadow: 0 6px 20px rgba(0,0,0,.25); }
+  .spin { width: 18px; height: 18px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; animation: r 1s linear infinite; }
+  @keyframes r { to { transform: rotate(360deg); } }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<header><div class="in">
+  <div class="brand"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l2 3h-4l2-3z" fill="#F5A524"/><path d="M9 7h6l1.5 13h-9L9 7z" fill="#fff"/><path d="M9.6 11h4.8M9.2 15h5.6" stroke="#0E1A2B" stroke-width="1.6"/><path d="M4 7.5L8 9M20 7.5L16 9" stroke="#F5A524" stroke-width="1.6" stroke-linecap="round"/><path d="M5 21h14" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/></svg>Маяк</div>
+  <div class="who" id="who"></div>
+</div></header>
+<main id="app"><div class="card hero muted">Загрузка…</div></main>
+<div id="toast"></div>
+
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} },
+  sget(k) { try { return sessionStorage.getItem(k); } catch { return null; } },
+  sset(k, v) { try { v == null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch {} },
+};
+let token = store.get("mayak.token");
+let me = null, state = null, view = { name: "home" };
+
+function toast(t) { const el = $("#toast"); el.textContent = t; el.style.display = "block"; clearTimeout(toast.t); toast.t = setTimeout(() => el.style.display = "none", 2600); }
+async function copy(text) {
+  try { await navigator.clipboard.writeText(text); toast("Скопировано"); }
+  catch { const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); toast("Скопировано"); }
+}
+async function api(path, opt = {}) {
+  const headers = { "Content-Type": "application/json" };
+  if (token) headers.Authorization = "Bearer " + token;
+  const res = await fetch(path, { method: opt.method || "GET", headers, body: opt.body ? JSON.stringify(opt.body) : undefined });
+  if (res.status === 401) { token = null; store.set("mayak.token", null); me = null; throw new Error("Нужно войти заново"); }
+  const data = res.status === 204 ? null : await res.json().catch(() => null);
+  if (!res.ok) throw new Error(data?.error || `Ошибка ${res.status}`);
+  return data;
+}
+function ago(iso) {
+  if (!iso) return "ещё не подключалось";
+  const m = Math.round((Date.now() - new Date(iso)) / 60000);
+  if (m < 3) return "в сети";
+  if (m < 60) return `был в сети ${m} мин назад`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `был в сети ${h} ч назад`;
+  return "был в сети " + new Date(iso).toLocaleDateString("ru-RU");
+}
+function day(iso) { return iso ? new Date(iso).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" }) : ""; }
+
+// ───── Платформы и приложения ─────
+const ICON = {
+  IPhone: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></svg>',
+  Android: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4.5 16a7.5 7.5 0 0 1 15 0z"/><path d="M7 8.5L5.3 6M17 8.5l1.7-2.5"/><circle cx="9" cy="12.6" r=".6" fill="currentColor"/><circle cx="15" cy="12.6" r=".6" fill="currentColor"/></svg>',
+  Windows: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></svg>',
+  Mac: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4.5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/></svg>',
+  Linux: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6l5 5-5 5M12 18h8"/></svg>',
+  Other: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8"/></svg>',
+};
+const PLATFORMS = [
+  { kind: "IPhone", title: "iPhone / iPad" },
+  { kind: "Android", title: "Android" },
+  { kind: "Windows", title: "Windows" },
+  { kind: "Mac", title: "Mac" },
+  { kind: "Linux", title: "Linux" },
+];
+const LINKS = {
+  awgApple: "https://apps.apple.com/app/amneziawg/id6478942365",
+  defaultVpn: "https://apps.apple.com/app/defaultvpn/id6744725017",
+  amneziaPlay: "https://play.google.com/store/apps/details?id=org.amnezia.vpn",
+  awgPlay: "https://play.google.com/store/apps/details?id=org.amnezia.awg",
+  amneziaReleases: "https://github.com/amnezia-vpn/amnezia-client/releases/latest",
+  amneziaSite: "https://amnezia.org/ru/downloads",
+  awgWindows: "https://github.com/amnezia-vpn/amneziawg-windows-client/releases/latest",
+};
+function detectKind() {
+  const ua = navigator.userAgent;
+  if (/iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return "IPhone";
+  if (/Android/.test(ua)) return "Android";
+  if (/Windows/.test(ua)) return "Windows";
+  if (/Macintosh/.test(ua)) return "Mac";
+  if (/Linux/.test(ua)) return "Linux";
+  return "IPhone";
+}
+const here = detectKind();
+const isPhone = here === "IPhone" || here === "Android";
+
+// Варианты подключения для платформы: первый — рекомендуемый.
+function options(kind, f) {
+  const fileBtn = `<button class="btn s" data-act="file">Скачать файл ${esc(f.confName)}</button>`;
+  const keyBlock = `<div class="key">${esc(f.vpnKey)}</div><button class="btn s p" data-act="key">Скопировать ключ</button>`;
+  const qrBlock = `<img class="qr" src="${f.qrConf}" alt="QR-код настроек">`;
+  const awgSteps = (store, scanHint) => `<ol class="steps">
+      <li>Установите <b>AmneziaWG</b>: <a href="${store}" target="_blank" rel="noopener">${store.includes("apple") ? "App Store" : store.includes("google") ? "Google Play" : "скачать"}</a>.</li>
+      <li>${scanHint}</li>
+      <li>Разрешите добавить VPN и включите переключатель.</li></ol>`;
+  const amneziaSteps = (where) => `<ol class="steps">
+      <li>Установите <b>AmneziaVPN</b>: ${where}.</li>
+      <li>Скопируйте ключ:${keyBlock}</li>
+      <li>В AmneziaVPN нажмите «Добавить» (+) → «Вставить» и подключитесь.</li></ol>`;
+  const onThis = kind === here;
+  switch (kind) {
+    case "IPhone": return [
+      { id: "awg", title: "AmneziaWG", html: awgSteps(LINKS.awgApple, onThis
+          ? `Нажмите ${fileBtn} и в открывшемся окне выберите «Открыть в AmneziaWG» (или в приложении: «+» → «Импорт из файла»).`
+          : `В AmneziaWG нажмите «+» → «Создать из QR-кода» и наведите камеру:${qrBlock}`) },
+      { id: "dvpn", title: "DefaultVPN", html: `<ol class="steps">
+          <li>Если AmneziaWG нет в App Store — установите <b>DefaultVPN</b>: <a href="${LINKS.defaultVpn}" target="_blank" rel="noopener">App Store</a> (нужен iOS 16+).</li>
+          <li>Скопируйте ключ:${keyBlock}</li>
+          <li>В DefaultVPN добавьте подключение по ключу и включите его.</li></ol>` },
+    ];
+    case "Android": {
+      const amn = { id: "amn", title: "AmneziaVPN", html: amneziaSteps(`<a href="${LINKS.amneziaPlay}" target="_blank" rel="noopener">Google Play</a> или <a href="${LINKS.amneziaReleases}" target="_blank" rel="noopener">файл APK</a>`) };
+      const awg = { id: "awg", title: "AmneziaWG", html: awgSteps(LINKS.awgPlay, onThis
+          ? `Нажмите ${fileBtn}, затем в AmneziaWG: «+» → «Импорт из файла».`
+          : `В AmneziaWG нажмите «+» → «Сканировать QR-код»:${qrBlock}`) };
+      // С компьютера проще отсканировать QR-код, на самом телефоне — вставить ключ.
+      return onThis ? [amn, awg] : [awg, amn];
+    }
+    case "Windows": return [
+      { id: "amn", title: "AmneziaVPN", html: amneziaSteps(`<a href="${LINKS.amneziaSite}" target="_blank" rel="noopener">amnezia.org</a> или <a href="${LINKS.amneziaReleases}" target="_blank" rel="noopener">GitHub</a>`) },
+      { id: "awg", title: "AmneziaWG", html: awgSteps(LINKS.awgWindows, `Нажмите ${fileBtn}, затем в AmneziaWG: «Импорт туннелей из файла» и «Подключить».`) },
+    ];
+    case "Mac": return [
+      { id: "awg", title: "AmneziaWG", html: awgSteps(LINKS.awgApple, `Нажмите ${fileBtn}, затем в AmneziaWG: «Импорт туннелей из файла» и «Подключить».`) },
+      { id: "amn", title: "AmneziaVPN", html: amneziaSteps(`<a href="${LINKS.amneziaSite}" target="_blank" rel="noopener">amnezia.org</a> или <a href="${LINKS.amneziaReleases}" target="_blank" rel="noopener">GitHub</a>`) },
+    ];
+    default: return [
+      { id: "amn", title: "AmneziaVPN", html: amneziaSteps(`<a href="${LINKS.amneziaReleases}" target="_blank" rel="noopener">GitHub</a>`) },
+      { id: "awg", title: "Файл .conf", html: `<p>Для awg-quick или NetworkManager с поддержкой AmneziaWG:</p>${fileBtn}` },
+    ];
+  }
+}
+
+// ───── Вход ─────
+const invite = (() => {
+  const q = new URLSearchParams(location.search).get("invite");
+  if (q) { store.sset("mayak.invite", q); history.replaceState(null, "", location.pathname); }
+  return store.sget("mayak.invite");
+})();
+let login = null, polling = false;
+
+async function prepareLogin() {
+  try {
+    login = await api("/api/auth/telegram", { method: "POST", body: { invite } });
+    login.until = Date.now() + login.expiresInSeconds * 1000 - 15000;
+    const a = $("#tg");
+    if (a) { a.href = login.botUrl; a.removeAttribute("aria-disabled"); }
+  } catch (e) {
+    if (/Приглашение/.test(e.message)) store.sset("mayak.invite", null);
+    const h = $("#loginHint"); if (h) h.innerHTML = `<span class="err">${esc(e.message)}</span>`;
+  }
+}
+async function pollLogin() {
+  if (polling || !login) return;
+  polling = true;
+  $("#loginHint").innerHTML = "Нажмите в боте «Запустить» — потом вернитесь сюда, вход завершится сам.";
+  try {
+    while (Date.now() < login.until + 15000) {
+      const res = await fetch(`/api/auth/telegram/${encodeURIComponent(login.requestId)}?client=site`);
+      if (res.ok) {
+        const d = await res.json();
+        token = d.token; store.set("mayak.token", token); store.sset("mayak.invite", null);
+        polling = false; return boot();
+      }
+      if (res.status !== 202) break;
+      await new Promise(ok => setTimeout(ok, 2000));
+    }
+  } catch {}
+  polling = false;
+  $("#loginHint").textContent = "Время на вход вышло — нажмите кнопку ещё раз.";
+  await prepareLogin();
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden && !me && login && $("#tg")?.dataset.clicked) pollLogin(); });
+
+function renderLogin() {
+  $("#who").innerHTML = "";
+  $("#app").innerHTML = `<div class="card hero">
+      <svg width="56" height="56" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="#0E1A2B"/><path d="M12 4.5l1.3 2h-2.6l1.3-2z" fill="#F5A524"/><path d="M10 7.5h4l1.1 10h-6.2L10 7.5z" fill="#fff"/><path d="M5.5 8l3.3 1.2M18.5 8l-3.3 1.2" stroke="#F5A524" stroke-width="1.3" stroke-linecap="round"/></svg>
+      <h1>${invite ? "Вас пригласили в Маяк" : "Маяк"}</h1>
+      <p class="muted">${invite ? "Войдите через Telegram — и ваши устройства появятся здесь, с ключами для приложения." : "Войдите через Telegram, чтобы получить ключ для приложения на своём телефоне или компьютере."}</p>
+      <a class="btn tg w" id="tg" href="#" target="_blank" rel="noopener" aria-disabled="true" style="margin-top:8px">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff" aria-hidden="true"><path d="M21.5 4.3L2.9 11.5c-1.1.4-1.1 1.2-.2 1.5l4.7 1.5 1.8 5.6c.2.6.4.8.9.8.4 0 .6-.2.9-.4l2.3-2.2 4.7 3.5c.9.5 1.5.2 1.7-.8l3.1-14.6c.3-1.3-.5-1.8-1.3-1.5zM8.7 14l9.1-5.7c.4-.3.8-.1.5.2l-7.7 7-.3 3.2L8.7 14z"/></svg>
+        Войти через Telegram</a>
+      <p class="muted" id="loginHint" style="margin-top:12px">Бот попросит нажать «Запустить» — это и есть вход. Пароли не нужны.</p>
+    </div>`;
+  const a = $("#tg");
+  a.onclick = e => {
+    if (!login) { e.preventDefault(); return; }
+    a.dataset.clicked = "1";
+    pollLogin();
+  };
+  prepareLogin();
+}
+
+function logout() {
+  if (token) fetch("/api/logout", { method: "POST", headers: { Authorization: "Bearer " + token } }).catch(() => {});
+  token = null; store.set("mayak.token", null); me = null; state = null; view = { name: "home" }; render();
+}
+
+// ───── Кабинет ─────
+async function boot() {
+  if (!token) return render();
+  try { state = await api("/api/me"); me = state.account; } catch { me = null; }
+  render();
+}
+
+function render() {
+  if (!me) return renderLogin();
+  $("#who").innerHTML = `<span>${esc(me.name)}</span><a href="#" id="out">выйти</a>`;
+  $("#out").onclick = e => { e.preventDefault(); logout(); };
+  if (!me.enabled) return renderWaiting();
+  if (!me.active) {
+    $("#app").innerHTML = `<div class="card hero"><h1>Срок доступа закончился</h1><p class="muted">Был до ${esc(day(me.paidUntil))}. Напишите администратору, чтобы продлить.</p></div>`;
+    return;
+  }
+  if (view.name === "add") return renderAdd();
+  if (view.name === "setup") return renderSetup();
+  renderHome();
+}
+
+function renderWaiting() {
+  $("#app").innerHTML = `<div class="card hero"><h1>Заявка отправлена</h1>
+    <p class="muted">Администратор получил уведомление. Как только доступ одобрят, бот напишет вам в Telegram, а здесь появится кнопка «Подключить устройство».</p>
+    <p class="muted">Страница обновится сама.</p></div>`;
+  clearTimeout(renderWaiting.t);
+  renderWaiting.t = setTimeout(boot, 15000);
+}
+
+function cityCard() {
+  const l = state.location;
+  if (!l) return "";
+  const photo = l.photoUrl ? ` photo" style="background-image:url('${esc(l.photoUrl)}')` : "";
+  return `<div class="card city${photo}">
+      <div class="label">Ваш маяк</div>
+      <div class="name">${esc(l.city || "Маяк")}${l.country ? `, ${esc(l.country)}` : ""}</div>
+      ${l.fact ? `<div class="fact">${esc(l.fact)}</div>` : ""}
+      <div class="status"><span class="dot ${l.online ? "on" : ""}"></span>${l.online ? "Сервер работает" : "Сервер не отвечает — мы уже разбираемся"}</div>
+    </div>`;
+}
+
+function renderHome() {
+  const devs = state.devices;
+  const canAdd = devs.length < me.maxDevices;
+  $("#app").innerHTML = `${cityCard()}
+    <div class="card">
+      <div class="row" style="margin-bottom:4px"><h2 class="grow" style="margin:0">Устройства</h2><span class="muted">${devs.length} из ${me.maxDevices}</span></div>
+      ${devs.length ? "" : `<p class="muted" style="margin:10px 0 4px">Пока ни одного. Добавьте устройство — получите ключ и короткую инструкцию.</p>`}
+      <div id="devs"></div>
+      ${canAdd ? `<button class="btn p w" id="add" style="margin-top:12px">+ Подключить устройство</button>`
+               : `<p class="muted" style="margin-top:12px">Достигнут лимит устройств. Чтобы добавить новое, удалите ненужное.</p>`}
+    </div>
+    ${state.app ? `<div class="card"><h2>Приложение Маяк</h2>
+      <p class="muted">Своё приложение: одна кнопка «Подключиться», устройства добавляются сами. Ключ подписки один на все ваши устройства.</p>
+      <div id="appKey"><button class="btn s p" id="getKey">Показать ключ подписки</button>
+      <a class="btn s" href="${esc(state.app.downloadUrl)}" target="_blank" rel="noopener">Скачать приложение</a></div></div>` : ""}
+    <div class="card"><p class="muted" style="margin:0">Доступ ${me.paidUntil ? `до ${esc(day(me.paidUntil))}` : "без срока"}${me.downMbps ? ` · скорость до ${me.downMbps} Мбит/с` : ""}. Вопросы — администратору в Telegram.</p></div>`;
+  const box = $("#devs");
+  for (const d of devs) {
+    const el = document.createElement("div");
+    el.className = "dev";
+    el.innerHTML = `<div class="ico">${ICON[d.kind] || ICON.Other}</div>
+      <div class="grow"><b>${esc(d.name)}</b><div class="muted">${d.enabled ? esc(ago(d.lastHandshake)) : "приостановлено администратором"}</div></div>
+      ${d.canExport ? `<button class="btn s" data-id="${d.id}">Ключ</button>` : `<span class="muted">в приложении Маяк</span>`}`;
+    const b = el.querySelector("button");
+    if (b) b.onclick = () => openSetup(d);
+    box.appendChild(el);
+  }
+  if ($("#add")) $("#add").onclick = () => { view = { name: "add", kind: here }; render(); };
+  if ($("#getKey")) $("#getKey").onclick = async () => {
+    try {
+      const r = await api("/api/app-key");
+      $("#appKey").innerHTML = `<ol class="steps"><li>Установите <a href="${esc(state.app.downloadUrl)}" target="_blank" rel="noopener">приложение Маяк</a>.</li>
+        <li>Скопируйте ключ:<div class="key">${esc(r.key)}</div><button class="btn s p" id="cpApp">Скопировать</button></li>
+        <li>В приложении нажмите «Добавить» → «Вставить ключ» — и «Подключиться».</li></ol>`;
+      $("#cpApp").onclick = () => copy(r.key);
+    } catch (e) { toast(e.message); }
+  };
+}
+
+function renderAdd() {
+  $("#app").innerHTML = `<div class="card">
+      <button class="link" id="back">← Назад</button>
+      <h1 style="margin-top:10px">Какое устройство подключаем?</h1>
+      <div class="platforms" id="pl" style="margin:14px 0"></div>
+      <label class="muted" for="nm">Название (чтобы отличать устройства)</label>
+      <input id="nm" maxlength="40" placeholder="Например: телефон мамы" style="margin:6px 0 14px">
+      <button class="btn p w" id="go">Получить ключ</button>
+      <p class="err" id="err" style="margin-top:10px"></p>
+    </div>`;
+  const pl = $("#pl");
+  for (const p of PLATFORMS) {
+    const b = document.createElement("button");
+    b.innerHTML = `${ICON[p.kind]}<span>${p.title}</span>`;
+    b.classList.toggle("on", view.kind === p.kind);
+    b.onclick = () => { view.kind = p.kind; pl.querySelectorAll("button").forEach(x => x.classList.remove("on")); b.classList.add("on"); };
+    pl.appendChild(b);
+  }
+  $("#back").onclick = () => { view = { name: "home" }; render(); };
+  $("#go").onclick = async () => {
+    const btn = $("#go"); btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
+    try {
+      const r = await api("/api/devices", { method: "POST", body: { name: $("#nm").value, kind: view.kind } });
+      state.devices.push(r.device);
+      view = { name: "setup", device: r.device, files: r.files, fresh: true };
+      render();
+    } catch (e) { $("#err").textContent = e.message; btn.disabled = false; btn.textContent = "Получить ключ"; }
+  };
+}
+
+async function openSetup(d) {
+  try {
+    const files = await api(`/api/devices/${d.id}/files`);
+    view = { name: "setup", device: d, files };
+    render();
+  } catch (e) { toast(e.message); }
+}
+
+function renderSetup() {
+  const { device: d, files: f } = view;
+  const kind = PLATFORMS.some(p => p.kind === d.kind) ? d.kind : here;
+  const opts = options(kind, f);
+  const sel = view.opt || opts[0].id;
+  const cur = opts.find(o => o.id === sel) || opts[0];
+  $("#app").innerHTML = `<div class="card">
+      <button class="link" id="back">← К устройствам</button>
+      <div class="row" style="margin-top:12px"><div class="ico">${ICON[d.kind] || ICON.Other}</div><div class="grow"><h1 style="margin:0">${esc(d.name)}</h1>
+        <div class="muted">${view.fresh ? "Устройство добавлено. Осталось настроить приложение." : "Ключ этого устройства"}</div></div></div>
+      ${kind !== here && (kind === "IPhone" || kind === "Android") ? `<p class="note" style="margin-top:14px">Вы настраиваете телефон с другого устройства: отсканируйте QR-код ниже приложением AmneziaWG на телефоне. Или откройте этот сайт на самом телефоне — там всё делается в пару нажатий.</p>` : ""}
+      <div class="tabs" style="margin-top:16px">${opts.map((o, i) => `<button data-o="${o.id}" class="${o.id === cur.id ? "on" : ""}">${esc(o.title)}${i === 0 ? " · рекомендуем" : ""}</button>`).join("")}</div>
+      <div id="how">${cur.html}</div>
+      <p class="muted" style="margin-top:16px">Ключ личный: не пересылайте его другим — для другого устройства добавьте новое.</p>
+    </div>
+    ${f.vless ? `<div class="card"><details><summary>Не подключается? Запасной способ</summary>
+      <p style="margin-top:10px">Ссылка для приложений с протоколом VLESS: <b>v2RayTun</b>, <b>Happ</b>, <b>Streisand</b> (iPhone), <b>v2rayNG</b> (Android), <b>Hiddify</b> (любые системы).
+      Скопируйте и добавьте в приложении «из буфера обмена» или отсканируйте QR-код.</p>
+      <div class="key">${esc(f.vless)}</div><button class="btn s p" id="cpv">Скопировать ссылку</button>
+      <img class="qr" src="${f.qrVless}" alt="QR-код ссылки"></details></div>` : ""}
+    <div class="card row"><button class="btn s d" id="del">Удалить устройство</button>
+      <span class="muted grow">Ключ на нём перестанет работать.</span></div>`;
+  $("#back").onclick = () => { view = { name: "home" }; boot(); };
+  document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => { view.opt = b.dataset.o; render(); });
+  document.querySelectorAll('[data-act="key"]').forEach(b => b.onclick = () => copy(f.vpnKey));
+  document.querySelectorAll('[data-act="file"]').forEach(b => b.onclick = () => download(f.confName, f.conf));
+  if ($("#cpv")) $("#cpv").onclick = () => copy(f.vless);
+  $("#del").onclick = async () => {
+    if (!confirm(`Удалить «${d.name}»? Ключ на этом устройстве перестанет работать.`)) return;
+    try { await api(`/api/devices/${d.id}`, { method: "DELETE" }); view = { name: "home" }; toast("Устройство удалено"); boot(); }
+    catch (e) { toast(e.message); }
+  };
+}
+
+function download(name, text) {
+  const blob = new Blob([text], { type: "application/octet-stream" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
+boot();
+</script>
+</body>
+</html>

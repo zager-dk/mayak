@@ -13,6 +13,8 @@ public sealed class TelegramOptions
     public string? Proxy { get; set; }
     /// <summary>Новые аккаунты сразу активны (открытая регистрация). Иначе ждут одобрения владельца.</summary>
     public bool AutoApprove { get; set; }
+    /// <summary>Адрес сайта (кабинета) для ссылок в сообщениях бота. Заполняется из PublicUrl.</summary>
+    public string? SiteUrl { get; set; }
 }
 
 /// <summary>Тонкий клиент Bot API (getMe, getUpdates, sendMessage).</summary>
@@ -134,7 +136,8 @@ public sealed class TelegramBotService : BackgroundService
                 await ConfirmLoginAsync(db, arg, me, userId, username, name, chatId, ct);
                 break;
             case "/start":
-                await _tg.SendAsync(chatId, "Это бот Маяка. Чтобы войти, нажмите «Войти через Telegram» в приложении Маяк VPN — оно откроет этот чат, останется нажать «Запустить».", ct);
+                await _tg.SendAsync(chatId, "Это бот Маяка. Чтобы войти, нажмите «Войти через Telegram» на сайте или в приложении Маяк VPN — откроется этот чат, останется нажать «Запустить»." +
+                    (_opt.SiteUrl is { Length: > 0 } site ? $"\nСайт: {site}" : ""), ct);
                 break;
             case "/id":
                 await _tg.SendAsync(chatId, $"Ваш Telegram ID: {userId}", ct);
@@ -158,6 +161,43 @@ public sealed class TelegramBotService : BackgroundService
         {
             await _tg.SendAsync(chatId, "Ссылка для входа устарела. Нажмите «Войти через Telegram» в приложении ещё раз.", ct);
             return;
+        }
+
+        // Пришёл по приглашению: привязываем Telegram к уже заведённому аккаунту (со всеми его устройствами).
+        bool invited = false;
+        if (req.InviteHash != null)
+        {
+            var inv = await db.Invites.Include(i => i.Account).FirstOrDefaultAsync(i => i.CodeHash == req.InviteHash, ct);
+            if (inv?.Account == null || inv.UsedAt != null || inv.ExpiresAt < DateTime.UtcNow)
+            {
+                await _tg.SendAsync(chatId, "Приглашение устарело или уже использовано. Попросите новую ссылку.", ct);
+                return;
+            }
+            var target = inv.Account;
+            if (target.TelegramId != null && target.TelegramId != userId)
+            {
+                await _tg.SendAsync(chatId, "Этот аккаунт уже привязан к другому Telegram. Напишите администратору.", ct);
+                return;
+            }
+            if (me != null && me.Id != target.Id)
+            {
+                // Человек уже успел войти сам и получил пустой аккаунт — заменяем его приглашённым.
+                bool empty = me.Role == Roles.User && !await db.Devices.AnyAsync(d => d.AccountId == me.Id, ct);
+                if (!empty)
+                {
+                    await _tg.SendAsync(chatId, "Ваш Telegram уже привязан к другому аккаунту Маяка с устройствами. Напишите администратору — он объединит их.", ct);
+                    return;
+                }
+                db.Accounts.Remove(me);
+                await db.SaveChangesAsync(ct);
+            }
+            target.TelegramId = userId;
+            target.TelegramUsername = username;
+            target.Enabled = true;
+            inv.UsedAt = DateTime.UtcNow;
+            db.Audit.Add(new AuditEntry { ActorId = target.Id, Action = "invite.accept", Details = $"{target.Name} @{username} {userId}" });
+            me = target;
+            invited = true;
         }
 
         bool isNew = me == null;
@@ -190,11 +230,12 @@ public sealed class TelegramBotService : BackgroundService
         {
             await _tg.SendAsync(chatId, isNew && me.Role == Roles.Owner
                 ? "Готово: вы вошли и назначены владельцем Маяка. Вернитесь в приложение."
-                : "Готово: вход подтверждён. Вернитесь в приложение Маяк.", ct);
+                : invited ? $"Готово: вы вошли как «{me.Name}». Вернитесь на сайт или в приложение Маяк — там ваши устройства."
+                : "Готово: вход подтверждён. Вернитесь на сайт или в приложение Маяк.", ct);
         }
         else
         {
-            await _tg.SendAsync(chatId, "Заявка на доступ отправлена. Как только её одобрят, приложение подключится само.", ct);
+            await _tg.SendAsync(chatId, "Заявка на доступ отправлена. Как только её одобрят, я напишу сюда — и на сайте можно будет получить ключ.", ct);
             if (isNew) await NotifyAdminsAsync(db, $"Новый человек просит доступ: {me.Name}" + (username != null ? $" (@{username})" : "") +
                                                    $"\nОдобрить: /approve {me.Id.ToString()[..8]}", ct);
         }
@@ -222,7 +263,7 @@ public sealed class TelegramBotService : BackgroundService
         await db.SaveChangesAsync(ct);
         await new ClusterService(db).BumpAsync(ct);
         await _tg.SendAsync(chatId, $"Доступ для «{acc.Name}» включён.", ct);
-        if (acc.TelegramId is long tid) await _tg.SendAsync(tid, "Доступ к Маяку одобрен — можно подключаться.", ct);
+        if (acc.TelegramId is long tid) await _tg.SendAsync(tid, "Доступ к Маяку одобрен — можно подключаться." + (_opt.SiteUrl is { Length: > 0 } site ? $"\nКлюч для приложения: {site}" : ""), ct);
     }
 
     private async Task NotifyAdminsAsync(MayakDb db, string text, CancellationToken ct)

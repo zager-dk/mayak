@@ -32,6 +32,12 @@ var cs = $"{server};Database={dbName}";
 Environment.SetEnvironmentVariable("MAYAK_ConnectionStrings__Db", cs);
 Environment.SetEnvironmentVariable("MAYAK_Telegram__Polling", "false");
 Environment.SetEnvironmentVariable("MAYAK_PublicUrl", "https://mayaklight.ru");
+var (gwPriv, gwPub) = Mayak.Core.Gateway.GatewayCrypto.GenerateKeyPair();
+var gwKeyPath = Path.Combine(Path.GetTempPath(), $"mayak-gw-{dbName}.pem");
+File.WriteAllText(gwKeyPath, gwPriv);
+Environment.SetEnvironmentVariable("MAYAK_Gateway__PrivateKeyPath", gwKeyPath);
+using var gwRsa = System.Security.Cryptography.RSA.Create();
+gwRsa.ImportFromPem(gwPub);
 
 var fakeTg = new FakeTelegram();
 await using var factory = new WebApplicationFactory<MayakDb>().WithWebHostBuilder(b =>
@@ -173,6 +179,129 @@ try
     var filesViaEntry = await owner.GetFromJsonAsync<JsonNode>($"/api/admin/devices/{lpDevice.Id}/files");
     Check("в файлах теперь адрес входа", JsonNode.Parse(VpnKeyCodec.Decode(filesViaEntry!["vpnKey"]!.GetValue<string>()))?["hostName"]?.GetValue<string>() == "5.42.104.30");
 
+    Console.WriteLine("Кабинет на сайте:");
+    var page = await http.GetStringAsync("/my/");
+    Check("страница кабинета открывается по /my/", page.Contains("Войти через Telegram"));
+    var guest = As(guestToken);
+    var mine = await guest.PostAsJsonAsync("/api/devices", new { name = "", kind = "IPhone" });
+    var mineBody = await mine.Content.ReadFromJsonAsync<JsonNode>();
+    var files = mineBody?["files"];
+    Check("человек сам заводит устройство", mine.IsSuccessStatusCode && mineBody!["device"]!["name"]!.GetValue<string>() == "iPhone", mineBody?.ToJsonString());
+    Check("сразу получает ключ vpn://, файл .conf и QR-код", files?["vpnKey"]?.GetValue<string>().StartsWith("vpn://") == true &&
+          files["conf"]!.GetValue<string>().Contains("[Interface]") && files["qrConf"]!.GetValue<string>().StartsWith("data:image/png;base64,") &&
+          files["confName"]!.GetValue<string>().EndsWith(".conf"));
+    Check("и запасную ссылку VLESS", files?["vless"]?.GetValue<string>().StartsWith("vless://") == true);
+    var myId = mineBody!["device"]!["id"]!.GetValue<string>();
+    Check("ключ своего устройства можно открыть снова", (await guest.GetAsync($"/api/devices/{myId}/files")).IsSuccessStatusCode);
+    Check("чужое устройство недоступно", (await guest.GetAsync($"/api/devices/{lpDevice.Id}/files")).StatusCode == HttpStatusCode.NotFound);
+    await guest.PostAsJsonAsync("/api/devices", new { name = "Ноутбук", kind = "Windows" });
+    await guest.PostAsJsonAsync("/api/devices", new { name = "Планшет", kind = "Android" });
+    var over = await guest.PostAsJsonAsync("/api/devices", new { name = "Четвёртое", kind = "Android" });
+    Check("больше лимита устройств — нельзя", over.StatusCode == HttpStatusCode.Conflict);
+    Check("удаление своего устройства", (await guest.DeleteAsync($"/api/devices/{myId}")).StatusCode == HttpStatusCode.NoContent);
+    var meWithLoc = await guest.GetFromJsonAsync<JsonNode>("/api/me");
+    Check("в кабинете город активного выхода", meWithLoc?["location"]?["city"]?.GetValue<string>() == "Хельсинки");
+
+    async Task<JsonNode> LoginInvite(long tgId, string first, string code)
+    {
+        var start = await (await http.PostAsJsonAsync("/api/auth/telegram", new { invite = code })).Content.ReadFromJsonAsync<JsonNode>();
+        var id = start!["requestId"]!.GetValue<string>();
+        await Say(tgId, "/start " + id, first);
+        return (await (await http.GetAsync($"/api/auth/telegram/{id}")).Content.ReadFromJsonAsync<JsonNode>())!;
+    }
+    var mamaId = mamaRow["account"]!["id"]!.GetValue<string>();
+    var inv = await (await owner.PostAsync($"/api/admin/accounts/{mamaId}/invite", null)).Content.ReadFromJsonAsync<JsonNode>();
+    var invUrl = inv!["url"]!.GetValue<string>();
+    Check("приглашение ведёт в кабинет", invUrl.StartsWith("https://mayaklight.ru/my/?invite="));
+    var invCode = invUrl.Split("invite=")[1];
+    var mamaLogin = await LoginInvite(333, "Мария", invCode);
+    Check("по приглашению человек входит в свой заведённый аккаунт", mamaLogin["account"]?["id"]?.GetValue<string>() == mamaId && mamaLogin["account"]!["enabled"]!.GetValue<bool>());
+    var mamaMe = await As(mamaLogin["token"]!.GetValue<string>()).GetFromJsonAsync<JsonNode>("/api/me");
+    Check("и видит свои устройства", mamaMe?["devices"]?.AsArray().Count > 0);
+    var reuse = await http.PostAsJsonAsync("/api/auth/telegram", new { invite = invCode });
+    Check("приглашение одноразовое", reuse.StatusCode == HttpStatusCode.Gone);
+    Check("повторное приглашение для привязанного аккаунта не нужно", (await owner.PostAsync($"/api/admin/accounts/{mamaId}/invite", null)).StatusCode == HttpStatusCode.BadRequest);
+
+    var (lateToken, lateAcc) = await Login(444, "Пётр", "petr");
+    var petr = await (await owner.PostAsJsonAsync("/api/admin/accounts", new { name = "Пётр (старый)" })).Content.ReadFromJsonAsync<JsonNode>();
+    await owner.PostAsJsonAsync($"/api/admin/accounts/{petr!["id"]}/devices", new { name = "Android", kind = "Android" });
+    var petrInv = (await (await owner.PostAsync($"/api/admin/accounts/{petr["id"]}/invite", null)).Content.ReadFromJsonAsync<JsonNode>())!["url"]!.GetValue<string>().Split("invite=")[1];
+    var petrLogin = await LoginInvite(444, "Пётр", petrInv);
+    Check("если человек успел войти сам, пустой аккаунт заменяется приглашённым", petrLogin["account"]?["id"]?.GetValue<string>() == petr["id"]!.GetValue<string>() &&
+          (await As(lateToken).GetAsync("/api/me")).StatusCode == HttpStatusCode.Unauthorized);
+
+    Console.WriteLine("Шлюз для приложения Маяк:");
+    async Task<JsonNode> Gw(string method, object payload)
+    {
+        var (body, session) = Mayak.Core.Gateway.GatewayCrypto.SealRequest(JsonSerializer.Serialize(payload), gwRsa);
+        var resp = await http.PostAsync($"/gw/v1/{method}", new StringContent(body, System.Text.Encoding.UTF8, "application/json"));
+        var raw = await resp.Content.ReadAsByteArrayAsync();
+        return JsonNode.Parse(Mayak.Core.Gateway.GatewayCrypto.OpenResponse(raw, session))!;
+    }
+    string NewKey() => Curve25519.GenerateKeyPair().PublicKey;
+    var gwInfo = await owner.GetFromJsonAsync<JsonNode>("/api/admin/gateway");
+    Check("админка показывает адрес шлюза и открытый ключ для сборки приложения", gwInfo?["ready"]?.GetValue<bool>() == true &&
+          gwInfo["endpoint"]!.GetValue<string>() == "https://mayaklight.ru/gw/" && gwInfo["publicKey"]!.GetValue<string>().Contains("BEGIN PUBLIC KEY"));
+    var guestKey = (await guest.GetFromJsonAsync<JsonNode>("/api/app-key"))!["key"]!.GetValue<string>();
+    var sub = JsonNode.Parse(VpnKeyCodec.Decode(guestKey))!;
+    var apiKey = sub["auth_data"]!["api_key"]!.GetValue<string>();
+    Check("ключ подписки: формат подписки Amnezia (config_version 2, auth_data)", sub["config_version"]!.GetValue<int>() == 2 &&
+          sub["api_config"]!["service_type"]!.GetValue<string>() == "amnezia-premium" && apiKey.Length > 20);
+    Check("ключ подписки не меняется при повторном запросе", (await guest.GetFromJsonAsync<JsonNode>("/api/app-key"))!["key"]!.GetValue<string>() == guestKey);
+    var devsBefore = (await guest.GetFromJsonAsync<JsonNode>("/api/me"))!["devices"]!.AsArray().Count;
+    var pk1 = NewKey();
+    var payload = new Dictionary<string, object?>
+    {
+        ["os_version"] = "ios", ["app_version"] = "4.9.0", ["installation_uuid"] = "inst-1", ["service_type"] = "amnezia-premium",
+        ["service_protocol"] = "awg", ["user_country_code"] = "ru", ["public_key"] = pk1, ["auth_data"] = new { api_key = apiKey },
+    };
+    var cfg1 = await Gw("config", payload);
+    var cfgJson = cfg1["config"]?.GetValue<string>() is { } k ? JsonNode.Parse(VpnKeyCodec.Decode(k)) : null;
+    Check("v1/config выдаёт настройки в формате шлюза", cfgJson?["config_version"]?.GetValue<int>() == 2 &&
+          cfgJson["containers"]![0]!["awg"]!["last_config"]!.GetValue<string>().Contains("$WIREGUARD_CLIENT_PRIVATE_KEY") &&
+          cfgJson["auth_data"]!["api_key"]!.GetValue<string>() == apiKey, cfg1.ToJsonString()[..Math.Min(300, cfg1.ToJsonString().Length)]);
+    Check("в настройках страна и срок обновления", cfgJson?["api_config"]?["server_country_code"]?.GetValue<string>() == "fi" &&
+          cfgJson["api_config"]!["public_key"]!["expires_at"]!.GetValue<string>().Length > 0);
+    var appDev = (await guest.GetFromJsonAsync<JsonNode>("/api/me"))!["devices"]!.AsArray().FirstOrDefault(d => d!["kind"]!.GetValue<string>() == "IPhone");
+    Check("устройство приложения появилось в кабинете (ключ только в приложении)", appDev != null && appDev["canExport"]!.GetValue<bool>() == false);
+    var st = await agent.GetFromJsonAsync<AgentState>(AgentPaths.State, json);
+    Check("и уходит на серверы с ключом приложения", st!.Accounts.SelectMany(a => a.Devices).Any(d => d.PublicKey == pk1));
+    var pk2 = NewKey();
+    payload["public_key"] = pk2;
+    await Gw("config", payload);
+    st = await agent.GetFromJsonAsync<AgentState>(AgentPaths.State, json);
+    var all = st!.Accounts.SelectMany(a => a.Devices).ToList();
+    Check("повторный запрос той же установки меняет ключ, а не добавляет устройство", all.Any(d => d.PublicKey == pk2) && all.All(d => d.PublicKey != pk1) &&
+          (await guest.GetFromJsonAsync<JsonNode>("/api/me"))!["devices"]!.AsArray().Count == devsBefore + 1);
+    var info = await Gw("account_info", new { auth_data = new { api_key = apiKey }, installation_uuid = "inst-1" });
+    Check("v1/account_info: устройства и лимит", info["max_device_count"]?.GetValue<int>() == 3 &&
+          info["issued_configs"]!.AsArray().Any(x => x!["installation_uuid"]!.GetValue<string>() == "inst-1"));
+    payload["installation_uuid"] = "inst-2"; payload["public_key"] = NewKey();
+    var overLimit = await Gw("config", payload);
+    Check("сверх лимита — 409, приложение покажет «лимит устройств»", overLimit["http_status"]?.GetValue<int>() == 409);
+    var bad = await Gw("config", new Dictionary<string, object?>(payload) { ["auth_data"] = new { api_key = "wrong" } });
+    Check("чужой ключ подписки — 404 Account not found.", bad["http_status"]?.GetValue<int>() == 404 && bad["message"]!.GetValue<string>() == "Account not found.");
+    await owner.PatchAsJsonAsync($"/api/admin/accounts/{guestAcc["id"]}", new { enabled = false });
+    payload["installation_uuid"] = "inst-1";
+    var paused = await Gw("config", payload);
+    Check("приостановленному — 402", paused["http_status"]?.GetValue<int>() == 402);
+    await owner.PatchAsJsonAsync($"/api/admin/accounts/{guestAcc["id"]}", new { enabled = true });
+    var revoked = await Gw("revoke_config", new { auth_data = new { api_key = apiKey }, installation_uuid = "inst-1" });
+    Check("v1/revoke_config отключает устройство", revoked["ok"]?.GetValue<bool>() == true &&
+          (await guest.GetFromJsonAsync<JsonNode>("/api/me"))!["devices"]!.AsArray().All(d => d!["kind"]!.GetValue<string>() != "IPhone"));
+
+    Console.WriteLine("Длинный опрос агента:");
+    var cur = (await agent.GetFromJsonAsync<AgentState>(AgentPaths.State, json))!.Revision;
+    var sw = System.Diagnostics.Stopwatch.StartNew();
+    var waiting = agent.GetFromJsonAsync<AgentState>($"{AgentPaths.State}?since={cur}&wait=20", json);
+    await Task.Delay(500);
+    await guest.PostAsJsonAsync("/api/devices", new { name = "Срочно", kind = "Android" });
+    var woke = await waiting;
+    Check("агент узнаёт об изменении сразу, а не через полминуты", woke!.Revision > cur && sw.Elapsed < TimeSpan.FromSeconds(5), sw.Elapsed.ToString());
+    sw.Restart();
+    var idle = await agent.GetFromJsonAsync<AgentState>($"{AgentPaths.State}?since={woke.Revision}&wait=1", json);
+    Check("без изменений ответ приходит по истечении ожидания", idle!.Revision == woke.Revision && sw.Elapsed >= TimeSpan.FromMilliseconds(900));
+
     Console.WriteLine("Своё устройство и выход:");
     var myDevices = await owner.GetFromJsonAsync<JsonNode>("/api/me");
     Check("у владельца пока нет устройств", myDevices!["devices"]!.AsArray().Count == 0);
@@ -181,6 +310,7 @@ try
 }
 finally
 {
+    File.Delete(gwKeyPath);
     await factory.DisposeAsync();
     NpgsqlConnection.ClearAllPools();
     await using var conn = new NpgsqlConnection($"{server};Database=postgres");

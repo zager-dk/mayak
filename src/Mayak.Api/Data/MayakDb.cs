@@ -13,6 +13,7 @@ public sealed class MayakDb : DbContext
     public DbSet<LoginRequest> LoginRequests => Set<LoginRequest>();
     public DbSet<Session> Sessions => Set<Session>();
     public DbSet<AuditEntry> Audit => Set<AuditEntry>();
+    public DbSet<Invite> Invites => Set<Invite>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -20,6 +21,7 @@ public sealed class MayakDb : DbContext
         {
             e.HasIndex(x => x.TelegramId).IsUnique();
             e.HasIndex(x => x.Email).IsUnique();
+            e.HasIndex(x => x.AppKey).IsUnique();
             e.Property(x => x.Role).HasMaxLength(16);
             e.HasMany(x => x.Devices).WithOne(x => x.Account!).HasForeignKey(x => x.AccountId).OnDelete(DeleteBehavior.Cascade);
         });
@@ -27,6 +29,7 @@ public sealed class MayakDb : DbContext
         {
             e.HasIndex(x => x.AwgPublicKey).IsUnique();
             e.HasIndex(x => x.Ip).IsUnique();
+            e.HasIndex(x => new { x.AccountId, x.InstallationId });
             e.Property(x => x.Kind).HasConversion<string>().HasMaxLength(16);
         });
         b.Entity<Server>(e =>
@@ -36,6 +39,11 @@ public sealed class MayakDb : DbContext
         });
         b.Entity<ClusterIdentity>(e => e.Property(x => x.Id).ValueGeneratedNever());
         b.Entity<LoginRequest>(e => e.Property(x => x.Id).HasMaxLength(64));
+        b.Entity<Invite>(e =>
+        {
+            e.HasKey(x => x.CodeHash);
+            e.HasOne(x => x.Account).WithMany().HasForeignKey(x => x.AccountId).OnDelete(DeleteBehavior.Cascade);
+        });
         b.Entity<Session>(e =>
         {
             e.HasKey(x => x.TokenHash);
