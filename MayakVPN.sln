@@ -15,6 +15,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Mayak.IntegrationTest", "te
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Mayak.ProbeTest", "tests\Mayak.ProbeTest\Mayak.ProbeTest.csproj", "{929F497A-DE4E-468F-8A76-8F6D33B6C3EC}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Mayak.GatewayTest", "tests\Mayak.GatewayTest\Mayak.GatewayTest.csproj", "{3BE69B7A-D3D8-448A-B311-98DD053BE10B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -41,6 +43,10 @@ Global
 		{929F497A-DE4E-468F-8A76-8F6D33B6C3EC}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{929F497A-DE4E-468F-8A76-8F6D33B6C3EC}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{929F497A-DE4E-468F-8A76-8F6D33B6C3EC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3BE69B7A-D3D8-448A-B311-98DD053BE10B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3BE69B7A-D3D8-448A-B311-98DD053BE10B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3BE69B7A-D3D8-448A-B311-98DD053BE10B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3BE69B7A-D3D8-448A-B311-98DD053BE10B}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -48,5 +54,6 @@ Global
 	GlobalSection(NestedProjects) = preSolution
 		{D084D1A1-647C-4016-B9F4-C2C50BD529AC} = {62711794-2F7D-4656-9419-54202614CC7B}
 		{929F497A-DE4E-468F-8A76-8F6D33B6C3EC} = {62711794-2F7D-4656-9419-54202614CC7B}
+		{3BE69B7A-D3D8-448A-B311-98DD053BE10B} = {62711794-2F7D-4656-9419-54202614CC7B}
 	EndGlobalSection
 EndGlobal
