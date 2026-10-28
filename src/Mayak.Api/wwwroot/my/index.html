@@ -293,12 +293,26 @@ function renderLogin() {
   $("#app").innerHTML = `<div class="card hero">
       <svg width="56" height="56" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="#0E1A2B"/><path d="M12 4.5l1.3 2h-2.6l1.3-2z" fill="#F5A524"/><path d="M10 7.5h4l1.1 10h-6.2L10 7.5z" fill="#fff"/><path d="M5.5 8l3.3 1.2M18.5 8l-3.3 1.2" stroke="#F5A524" stroke-width="1.3" stroke-linecap="round"/></svg>
       <h1>${invite ? "Вас пригласили в Маяк" : "Маяк"}</h1>
-      <p class="muted">${invite ? "Войдите через Telegram — и ваши устройства появятся здесь, с ключами для приложения." : "Войдите через Telegram, чтобы получить ключ для приложения на своём телефоне или компьютере."}</p>
+      <p class="muted">${invite ? "Здесь ваши устройства и ключи для подключения." : "Войдите через Telegram, чтобы получить ключ для приложения на своём телефоне или компьютере."}</p>
+      ${invite ? `<button class="btn p w" id="byInvite" style="margin-top:8px">Открыть кабинет</button>
+        <p class="muted" id="inviteHint" style="margin:14px 0 4px">Есть Telegram? Войдите через него — тогда потом можно будет входить и без ссылки:</p>` : ""}
       <a class="btn tg w" id="tg" href="#"${isPhone ? "" : ' target="_blank" rel="noopener"'} aria-disabled="true" style="margin-top:8px">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff" aria-hidden="true"><path d="M21.5 4.3L2.9 11.5c-1.1.4-1.1 1.2-.2 1.5l4.7 1.5 1.8 5.6c.2.6.4.8.9.8.4 0 .6-.2.9-.4l2.3-2.2 4.7 3.5c.9.5 1.5.2 1.7-.8l3.1-14.6c.3-1.3-.5-1.8-1.3-1.5zM8.7 14l9.1-5.7c.4-.3.8-.1.5.2l-7.7 7-.3 3.2L8.7 14z"/></svg>
         Войти через Telegram</a>
       <p class="muted" id="loginHint" style="margin-top:12px">Бот попросит нажать «Запустить» — это и есть вход. Пароли не нужны.</p>
     </div>`;
+  if ($("#byInvite")) $("#byInvite").onclick = async () => {
+    const b = $("#byInvite"); b.disabled = true; b.innerHTML = '<span class="spin" style="border-color:rgba(0,0,0,.25);border-top-color:#1B1405"></span>';
+    try {
+      const r = await api("/api/auth/invite", { method: "POST", body: { invite } });
+      token = r.token; store.set("mayak.token", token); store.sset("mayak.invite", null);
+      boot();
+    } catch (e) {
+      store.sset("mayak.invite", null);
+      $("#inviteHint").innerHTML = `<span class="err">${esc(e.message)}</span>`;
+      b.remove();
+    }
+  };
   const a = $("#tg");
   a.onclick = e => {
     if (!login) { e.preventDefault(); return; }

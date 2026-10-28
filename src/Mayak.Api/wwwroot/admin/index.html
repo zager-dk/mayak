@@ -185,7 +185,7 @@ function showPerson(row) {
       <div><label>Заметка</label><input id="note" value="${esc(row.note || "")}" style="width:100%"></div>
       ${me.role === "owner" ? `<div><label>Роль</label><select id="role" style="width:100%">${["user", "support", "admin", "owner"].map(r => `<option ${r === a.role ? "selected" : ""}>${r}</option>`).join("")}</select></div>` : ""}
     </div>
-    <div class="row" style="margin-top:12px"><button class="b p" id="save">Сохранить</button>${!a.telegram ? `<button class="b" id="invite">Ссылка в кабинет</button>` : ""}${row.legacy ? `<span class="muted">перенесён из Маяка для Windows</span>` : ""}</div>
+    <div class="row" style="margin-top:12px"><button class="b p" id="save">Сохранить</button><button class="b" id="invite">Ссылка в кабинет</button>${row.legacy ? `<span class="muted">перенесён из Маяка для Windows</span>` : ""}</div>
     <div id="inviteOut"></div></div>
     <div class="card"><div class="row"><h2 class="grow">Устройства</h2><select id="kind">${Object.entries(kinds).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select><button class="b" id="adddev">+ Устройство</button></div>
     <table><tr><th></th><th>Устройство</th><th class="hide">IP</th><th class="hide">Трафик</th><th>Был в сети</th><th></th></tr>
@@ -207,8 +207,8 @@ function showPerson(row) {
   if ($("#invite")) $("#invite").onclick = async () => {
     try {
       const r = await api(`/api/admin/accounts/${a.id}/invite`, { method: "POST" });
-      const text = `Привет! Это ссылка в личный кабинет Маяка: войдите через Telegram — там будут ваши устройства и ключи.\n${r.url}`;
-      $("#inviteOut").innerHTML = `<p class="muted" style="margin-top:10px">Отправьте человеку. Ссылка одноразовая, действует ${r.expiresInDays} дней; после входа его Telegram привяжется к этому аккаунту.</p>
+      const text = `Привет! Это ссылка в личный кабинет Маяка — там ваши устройства и ключи для подключения. Откройте её на телефоне или компьютере:\n${r.url}`;
+      $("#inviteOut").innerHTML = `<p class="muted" style="margin-top:10px">Отправьте человеку. Ссылка одноразовая, действует ${r.expiresInDays} дней и открывает кабинет сразу, без Telegram. Нужен вход ещё на одном устройстве — создайте новую ссылку (старая неиспользованная перестанет работать).</p>
         <pre>${esc(text)}</pre><button class="b" id="cpInv">Копировать</button>`;
       $("#cpInv").onclick = () => copy(text);
     } catch (e) { toast(e.message); }

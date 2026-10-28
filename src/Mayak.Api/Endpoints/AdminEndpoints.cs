@@ -105,7 +105,6 @@ public static class AdminEndpoints
         {
             var acc = await db.Accounts.FirstOrDefaultAsync(a => a.Id == id);
             if (acc == null) return Results.NotFound();
-            if (acc.TelegramId != null) return Results.BadRequest(new { error = "Этот человек уже входит через Telegram — ему достаточно открыть сайт." });
             await db.Invites.Where(i => i.AccountId == id && i.UsedAt == null).ExecuteDeleteAsync();
             var code = Tokens.New(12);
             db.Invites.Add(new Invite { CodeHash = Tokens.Hash(code), AccountId = id, CreatedBy = http.Me().Id });

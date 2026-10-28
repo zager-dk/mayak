@@ -224,7 +224,14 @@ try
     Check("и видит свои устройства", mamaMe?["devices"]?.AsArray().Count > 0);
     var reuse = await http.PostAsJsonAsync("/api/auth/telegram", new { invite = invCode });
     Check("приглашение одноразовое", reuse.StatusCode == HttpStatusCode.Gone);
-    Check("повторное приглашение для привязанного аккаунта не нужно", (await owner.PostAsync($"/api/admin/accounts/{mamaId}/invite", null)).StatusCode == HttpStatusCode.BadRequest);
+    var direct = (await (await owner.PostAsync($"/api/admin/accounts/{mamaId}/invite", null)).Content.ReadFromJsonAsync<JsonNode>())!["url"]!.GetValue<string>().Split("invite=")[1];
+    var byLink = await http.PostAsJsonAsync("/api/auth/invite", new { invite = direct });
+    var byLinkBody = await byLink.Content.ReadFromJsonAsync<JsonNode>();
+    Check("по ссылке кабинет открывается сразу, без Telegram", byLink.IsSuccessStatusCode && byLinkBody?["account"]?["id"]?.GetValue<string>() == mamaId);
+    var linkMe = await As(byLinkBody!["token"]!.GetValue<string>()).GetFromJsonAsync<JsonNode>("/api/me");
+    Check("и в нём устройства человека", linkMe?["devices"]?.AsArray().Count > 0);
+    Check("ссылка одноразовая", (await http.PostAsJsonAsync("/api/auth/invite", new { invite = direct })).StatusCode == HttpStatusCode.Gone);
+    Check("неизвестная ссылка не пускает", (await http.PostAsJsonAsync("/api/auth/invite", new { invite = "nope" })).StatusCode == HttpStatusCode.Gone);
 
     var (lateToken, lateAcc) = await Login(444, "Пётр", "petr");
     var petr = await (await owner.PostAsJsonAsync("/api/admin/accounts", new { name = "Пётр (старый)" })).Content.ReadFromJsonAsync<JsonNode>();

@@ -38,6 +38,23 @@ public static class AppEndpoints
             return Results.Ok(new { requestId = req.Id, botUrl = tg.StartLink(req.Id), expiresInSeconds = (int)TelegramBotService.LoginLifetime.TotalSeconds });
         });
 
+        // Вход по ссылке-приглашению из админки — без Telegram (для своих людей). Ссылка одноразовая.
+        auth.MapPost("/invite", async (LoginStart body, MayakDb db) =>
+        {
+            if (string.IsNullOrWhiteSpace(body.Invite)) return Results.BadRequest(new { error = "Нет кода приглашения" });
+            var hash = Tokens.Hash(body.Invite.Trim());
+            var inv = await db.Invites.Include(i => i.Account).FirstOrDefaultAsync(i => i.CodeHash == hash);
+            if (inv?.Account == null || inv.UsedAt != null || inv.ExpiresAt < DateTime.UtcNow)
+                return Results.Json(new { error = "Ссылка устарела или уже использована. Попросите новую." }, statusCode: 410);
+            inv.UsedAt = DateTime.UtcNow;
+            inv.Account.Enabled = true;
+            var token = Tokens.New();
+            db.Sessions.Add(new Session { TokenHash = Tokens.Hash(token), AccountId = inv.Account.Id, Client = "invite" });
+            db.Audit.Add(new AuditEntry { ActorId = inv.Account.Id, Action = "invite.login", Details = inv.Account.Name });
+            await db.SaveChangesAsync();
+            return Results.Ok(new { status = "ok", token, account = AccountView(inv.Account) });
+        });
+
         // 2. Приложение спрашивает, подтвердил ли человек вход в боте.
         auth.MapGet("/telegram/{id}", async (string id, string? client, MayakDb db) =>
         {
