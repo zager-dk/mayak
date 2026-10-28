@@ -253,6 +253,8 @@ try
     var gwInfo = await owner.GetFromJsonAsync<JsonNode>("/api/admin/gateway");
     Check("админка показывает адрес шлюза и открытый ключ для сборки приложения", gwInfo?["ready"]?.GetValue<bool>() == true &&
           gwInfo["endpoint"]!.GetValue<string>() == "https://mayaklight.ru/gw/" && gwInfo["publicKey"]!.GetValue<string>().Contains("BEGIN PUBLIC KEY"));
+    var pubPem = await http.GetStringAsync("/gw/public-key");
+    Check("открытый ключ шлюза доступен для сборки приложения", pubPem.Trim() == gwPub.Trim());
     var guestKey = (await guest.GetFromJsonAsync<JsonNode>("/api/app-key"))!["key"]!.GetValue<string>();
     var sub = JsonNode.Parse(VpnKeyCodec.Decode(guestKey))!;
     var apiKey = sub["auth_data"]!["api_key"]!.GetValue<string>();

@@ -44,6 +44,10 @@ public static class GatewayEndpoints
 
     public static void Map(WebApplication app)
     {
+        // Открытый ключ шлюза: его вшивает в приложение сборка (он не секретный).
+        app.MapGet(Prefix + "public-key", (GatewayKeys keys) =>
+            keys.PublicPem == null ? Results.NotFound() : Results.Text(keys.PublicPem + "\n", "application/x-pem-file"));
+
         app.MapPost(Prefix + "v1/{method}", async (string method, HttpContext http, GatewayKeys keys, MayakDb db, ClusterService cluster, ILogger<GatewayKeys> log) =>
         {
             if (keys.Rsa == null) return Results.Json(new { error = "Шлюз не настроен" }, statusCode: 503);

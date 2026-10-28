@@ -87,8 +87,11 @@ public static class AppEndpoints
                 location = await cluster.LocationAsync(http.RequestAborted),
                 ready = c != null,
                 xray = c != null && ClusterService.XrayOf(c) != null,
-                // Своё приложение показывается в кабинете, когда есть шлюз и адрес, откуда его скачать.
-                app = keys.Rsa != null && cfg["App:DownloadUrl"] is { Length: > 0 } url ? new { downloadUrl = url } : null,
+                // Своё приложение показывается в кабинете, когда есть шлюз и адрес, откуда его скачать
+                // (App:DownloadUrl). Администраторам — сразу, чтобы проверить до выпуска.
+                app = keys.Rsa == null ? null
+                    : cfg["App:DownloadUrl"] is { Length: > 0 } url ? new { downloadUrl = (string?)url }
+                    : Roles.Rank(acc.Role) >= Roles.Rank(Roles.Admin) ? new { downloadUrl = (string?)null } : null,
             });
         });
 

@@ -391,7 +391,7 @@ function renderHome() {
     ${state.app ? `<div class="card"><h2>Приложение Маяк</h2>
       <p class="muted">Своё приложение: одна кнопка «Подключиться», устройства добавляются сами. Ключ подписки один на все ваши устройства.</p>
       <div id="appKey"><button class="btn s p" id="getKey">Показать ключ подписки</button>
-      <a class="btn s" href="${esc(state.app.downloadUrl)}" target="_blank" rel="noopener">Скачать приложение</a></div></div>` : ""}
+      ${state.app.downloadUrl ? `<a class="btn s" href="${esc(state.app.downloadUrl)}" target="_blank" rel="noopener">Скачать приложение</a>` : `<span class="muted">Проверка перед выпуском — видно только администраторам.</span>`}</div></div>` : ""}
     <div class="card"><p class="muted" style="margin:0">Доступ ${me.paidUntil ? `до ${esc(day(me.paidUntil))}` : "без срока"}${me.downMbps ? ` · скорость до ${me.downMbps} Мбит/с` : ""}. Вопросы — администратору в Telegram.</p></div>`;
   const box = $("#devs");
   for (const d of devs) {
@@ -408,7 +408,7 @@ function renderHome() {
   if ($("#getKey")) $("#getKey").onclick = async () => {
     try {
       const r = await api("/api/app-key");
-      $("#appKey").innerHTML = `<ol class="steps"><li>Установите <a href="${esc(state.app.downloadUrl)}" target="_blank" rel="noopener">приложение Маяк</a>.</li>
+      $("#appKey").innerHTML = `<ol class="steps"><li>Установите ${state.app.downloadUrl ? `<a href="${esc(state.app.downloadUrl)}" target="_blank" rel="noopener">приложение Маяк</a>` : "приложение Маяк"}.</li>
         <li>Скопируйте ключ:<div class="key">${esc(r.key)}</div><button class="btn s p" id="cpApp">Скопировать</button></li>
         <li>В приложении нажмите «Добавить» → «Вставить ключ» — и «Подключиться».</li></ol>`;
       $("#cpApp").onclick = () => copy(r.key);
