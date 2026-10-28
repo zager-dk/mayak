@@ -55,7 +55,7 @@ try
     var health = await http.GetFromJsonAsync<JsonNode>("/health");
     Check("API отвечает, база создана миграциями", health?["ok"]?.GetValue<bool>() == true);
 
-    var bot = new TelegramBotService(fakeTg, new TelegramOptions { Token = "test" }, factory.Services.GetRequiredService<IServiceScopeFactory>(),
+    var bot = new TelegramBotService(fakeTg, new TelegramOptions { Token = "test", PublicUrl = "https://mayaklight.ru" }, factory.Services.GetRequiredService<IServiceScopeFactory>(),
         factory.Services.GetRequiredService<Microsoft.Extensions.Logging.ILogger<TelegramBotService>>());
     Task Say(long userId, string text, string first = "Тест", string? username = null) =>
         bot.HandleAsync(JsonNode.Parse(JsonSerializer.Serialize(new
@@ -75,8 +75,12 @@ try
         await Say(tgId, "/start " + id, first, username);
         var done = await http.GetAsync($"/api/auth/telegram/{id}?client=test");
         var body = await done.Content.ReadFromJsonAsync<JsonNode>();
+        var button = fakeTg.Sent.LastOrDefault(m => m.Chat == tgId)?.ButtonUrl;
+        Check($"{first}: бот прислал кнопку «Вернуться на сайт» с кодом входа", button == $"https://mayaklight.ru/my/?login={id}", button);
+        var viaButton = await http.GetAsync($"/api/auth/telegram/{id}");
+        Check($"{first}: вход завершается и по кнопке из бота (другой браузер)", viaButton.StatusCode == HttpStatusCode.OK);
         var again = await http.GetAsync($"/api/auth/telegram/{id}");
-        Check($"{first}: ссылку входа нельзя использовать повторно", again.StatusCode == HttpStatusCode.Gone);
+        Check($"{first}: больше двух раз код входа не работает", again.StatusCode == HttpStatusCode.Gone);
         return (body!["token"]!.GetValue<string>(), body["account"]!);
     }
     HttpClient As(string token)
@@ -325,9 +329,14 @@ return failed == 0 ? 0 : 1;
 
 sealed class FakeTelegram : TelegramClient
 {
-    public sealed record Message(long Chat, string Text);
+    public sealed record Message(long Chat, string Text, string? ButtonUrl = null);
     public List<Message> Sent { get; } = new();
     public FakeTelegram() : base(new TelegramOptions { Token = "test" }) { Username = "mayak_test_bot"; }
+    public override Task SendAsync(long chatId, string text, string buttonText, string buttonUrl, CancellationToken ct)
+    {
+        lock (Sent) Sent.Add(new Message(chatId, text, buttonUrl));
+        return Task.CompletedTask;
+    }
     public override Task SendAsync(long chatId, string text, CancellationToken ct)
     {
         lock (Sent) Sent.Add(new Message(chatId, text));

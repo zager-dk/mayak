@@ -15,6 +15,8 @@ public sealed class TelegramOptions
     public bool AutoApprove { get; set; }
     /// <summary>Адрес сайта (кабинета) для ссылок в сообщениях бота. Заполняется из PublicUrl.</summary>
     public string? SiteUrl { get; set; }
+    /// <summary>Адрес сервиса (https://домен) — для кнопки «Вернуться на сайт».</summary>
+    public string? PublicUrl { get; set; }
 }
 
 /// <summary>Тонкий клиент Bot API (getMe, getUpdates, sendMessage).</summary>
@@ -52,6 +54,16 @@ public class TelegramClient
 
     public virtual Task SendAsync(long chatId, string text, CancellationToken ct) =>
         CallAsync("sendMessage", new { chat_id = chatId, text, disable_web_page_preview = true }, ct);
+
+    /// <summary>Сообщение с кнопкой-ссылкой под ним.</summary>
+    public virtual Task SendAsync(long chatId, string text, string buttonText, string buttonUrl, CancellationToken ct) =>
+        CallAsync("sendMessage", new
+        {
+            chat_id = chatId,
+            text,
+            disable_web_page_preview = true,
+            reply_markup = new { inline_keyboard = new[] { new[] { new { text = buttonText, url = buttonUrl } } } },
+        }, ct);
 
     public string StartLink(string payload) => $"https://t.me/{Username}?start={payload}";
 }
@@ -157,7 +169,7 @@ public sealed class TelegramBotService : BackgroundService
     private async Task ConfirmLoginAsync(MayakDb db, string requestId, Account? me, long userId, string? username, string name, long chatId, CancellationToken ct)
     {
         var req = await db.LoginRequests.FirstOrDefaultAsync(r => r.Id == requestId, ct);
-        if (req == null || req.Consumed || req.AccountId != null || DateTime.UtcNow - req.CreatedAt > LoginLifetime)
+        if (req == null || req.Uses > 0 || req.AccountId != null || DateTime.UtcNow - req.CreatedAt > LoginLifetime)
         {
             await _tg.SendAsync(chatId, "Ссылка для входа устарела. Нажмите «Войти через Telegram» в приложении ещё раз.", ct);
             return;
@@ -226,16 +238,18 @@ public sealed class TelegramBotService : BackgroundService
         db.Audit.Add(new AuditEntry { ActorId = me.Id, Action = "login.telegram", Details = $"@{username} {userId}" });
         await db.SaveChangesAsync(ct);
 
-        if (me.Enabled)
-        {
-            await _tg.SendAsync(chatId, isNew && me.Role == Roles.Owner
-                ? "Готово: вы вошли и назначены владельцем Маяка. Вернитесь в приложение."
-                : invited ? $"Готово: вы вошли как «{me.Name}». Вернитесь на сайт или в приложение Маяк — там ваши устройства."
-                : "Готово: вход подтверждён. Вернитесь на сайт или в приложение Маяк.", ct);
-        }
+        var text = !me.Enabled ? "Заявка на доступ отправлена. Как только её одобрят, я напишу сюда — и на сайте можно будет получить ключ."
+            : isNew && me.Role == Roles.Owner ? "Готово: вы вошли и назначены владельцем Маяка."
+            : invited ? $"Готово: вы вошли как «{me.Name}». На сайте — ваши устройства и ключи."
+            : "Готово: вход подтверждён.";
+        // Telegram сам не возвращает в браузер — даём кнопку, которая завершает вход на сайте.
+        if (_opt.PublicUrl is { Length: > 0 } baseUrl)
+            await _tg.SendAsync(chatId, text, "Вернуться на сайт", $"{baseUrl.TrimEnd('/')}{req.ReturnPath ?? "/my/"}?login={Uri.EscapeDataString(req.Id)}", ct);
         else
+            await _tg.SendAsync(chatId, text + " Вернитесь на сайт.", ct);
+
+        if (!me.Enabled)
         {
-            await _tg.SendAsync(chatId, "Заявка на доступ отправлена. Как только её одобрят, я напишу сюда — и на сайте можно будет получить ключ.", ct);
             if (isNew) await NotifyAdminsAsync(db, $"Новый человек просит доступ: {me.Name}" + (username != null ? $" (@{username})" : "") +
                                                    $"\nОдобрить: /approve {me.Id.ToString()[..8]}", ct);
         }

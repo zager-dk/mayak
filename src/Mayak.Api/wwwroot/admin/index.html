@@ -97,7 +97,7 @@ function logout() { if (token) fetch("/api/logout", { method: "POST", headers: {
 async function startLogin() {
   const btn = $("#login"); btn.disabled = true;
   try {
-    const r = await api("/api/auth/telegram", { method: "POST" });
+    const r = await api("/api/auth/telegram", { method: "POST", body: { return: "/admin/" } });
     window.open(r.botUrl, "_blank");
     $("#loginHint").innerHTML = `Откройте бота и нажмите «Запустить». Если окно не открылось — <a href="${esc(r.botUrl)}" target="_blank">ссылка на бота</a>.`;
     const until = Date.now() + r.expiresInSeconds * 1000;
@@ -114,6 +114,15 @@ async function startLogin() {
 }
 
 async function boot() {
+  // Кнопка «Вернуться на сайт» из бота: завершаем вход по коду из адреса.
+  const back = new URLSearchParams(location.search).get("login");
+  if (back) {
+    history.replaceState(null, "", location.pathname);
+    try {
+      const res = await fetch(`/api/auth/telegram/${encodeURIComponent(back)}?client=web`);
+      if (res.ok) { const d = await res.json(); token = d.token; store.set("mayak.token", token); }
+    } catch {}
+  }
   if (!token) return render();
   try { me = (await api("/api/me")).account; } catch { return render(); }
   render();

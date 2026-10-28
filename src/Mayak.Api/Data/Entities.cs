@@ -146,6 +146,10 @@ public sealed class LoginRequest
     public string? TelegramName { get; set; }
     public Guid? AccountId { get; set; }
     public bool Consumed { get; set; }
+    /// <summary>Сколько раз по запросу выдан сеанс: вход может завершить и исходная вкладка, и кнопка из бота.</summary>
+    public int Uses { get; set; }
+    /// <summary>Куда вернуть человека кнопкой из бота: /my/ или /admin/.</summary>
+    public string? ReturnPath { get; set; }
     /// <summary>Хеш кода приглашения, если человек пришёл по ссылке из админки.</summary>
     public string? InviteHash { get; set; }
 }

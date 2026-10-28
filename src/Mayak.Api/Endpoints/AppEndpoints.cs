@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Mayak.Api.Endpoints;
 
-public sealed record LoginStart(string? Invite);
+public sealed record LoginStart(string? Invite, string? Return);
 public sealed record MyDeviceCreate(string? Name, DeviceKind Kind);
 public sealed record MyDevicePatch(string? Name);
 
@@ -31,7 +31,8 @@ public static class AppEndpoints
                 if (inv == null || inv.UsedAt != null || inv.ExpiresAt < DateTime.UtcNow)
                     return Results.Json(new { error = "Приглашение устарело или уже использовано. Попросите новое." }, statusCode: 410);
             }
-            var req = new LoginRequest { Id = Tokens.New(18), InviteHash = inviteHash };
+            var ret = body?.Return is "/admin/" or "/my/" ? body.Return : "/my/";
+            var req = new LoginRequest { Id = Tokens.New(18), InviteHash = inviteHash, ReturnPath = ret };
             db.LoginRequests.Add(req);
             await db.SaveChangesAsync();
             return Results.Ok(new { requestId = req.Id, botUrl = tg.StartLink(req.Id), expiresInSeconds = (int)TelegramBotService.LoginLifetime.TotalSeconds });
@@ -41,11 +42,14 @@ public static class AppEndpoints
         auth.MapGet("/telegram/{id}", async (string id, string? client, MayakDb db) =>
         {
             var req = await db.LoginRequests.FirstOrDefaultAsync(r => r.Id == id);
-            if (req == null || req.Consumed || DateTime.UtcNow - req.CreatedAt > TelegramBotService.LoginLifetime)
+            // Сеанс по одному запросу выдаётся не больше MaxLoginUses раз: на телефоне вход завершает либо
+            // исходная вкладка, либо кнопка «Вернуться на сайт» из бота (она может открыться в другом браузере).
+            if (req == null || req.Uses >= MaxLoginUses || DateTime.UtcNow - req.CreatedAt > TelegramBotService.LoginLifetime)
                 return Results.Json(new { status = "expired" }, statusCode: 410);
             if (req.AccountId == null) return Results.Json(new { status = "pending" }, statusCode: 202);
             var acc = await db.Accounts.FirstAsync(a => a.Id == req.AccountId);
             req.Consumed = true;
+            req.Uses++;
             var token = Tokens.New();
             db.Sessions.Add(new Session { TokenHash = Tokens.Hash(token), AccountId = acc.Id, Client = (client ?? "").Trim()[..Math.Min(64, (client ?? "").Trim().Length)] });
             await db.SaveChangesAsync();
@@ -165,6 +169,8 @@ public static class AppEndpoints
             return Results.NoContent();
         });
     }
+
+    public const int MaxLoginUses = 2;
 
     public static string KindName(DeviceKind k) => k switch
     {

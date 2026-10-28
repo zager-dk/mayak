@@ -27,6 +27,7 @@ var distDir = cfg["DistDir"] ?? "/opt/mayak/dist";
 var tgOptions = cfg.GetSection("Telegram").Get<TelegramOptions>() ?? new TelegramOptions();
 // Кабинет — по отдельному адресу; главная страница домена остаётся нейтральной.
 tgOptions.SiteUrl ??= publicUrl + "/my/";
+tgOptions.PublicUrl ??= publicUrl;
 
 builder.Services.AddDbContext<MayakDb>(o => o.UseNpgsql(connectionString));
 builder.Services.AddScoped<ClusterService>();

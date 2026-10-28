@@ -221,10 +221,34 @@ const invite = (() => {
   return store.sget("mayak.invite");
 })();
 let login = null, polling = false;
+// Начатый вход хранится между перезагрузками: телефон часто выгружает вкладку, пока человек в Telegram.
+const pending = {
+  get() { try { const p = JSON.parse(store.get("mayak.login") || "null"); return p && p.until > Date.now() ? p : null; } catch { return null; } },
+  set(p) { store.set("mayak.login", p ? JSON.stringify(p) : null); },
+};
+// Кнопка «Вернуться на сайт» из бота приносит код входа в адресе.
+const returned = (() => {
+  const q = new URLSearchParams(location.search).get("login");
+  if (q) history.replaceState(null, "", location.pathname);
+  return q;
+})();
+
+async function finishLogin(requestId, { quiet } = {}) {
+  const res = await fetch(`/api/auth/telegram/${encodeURIComponent(requestId)}?client=site`);
+  if (res.status === 202) return "pending";   // 202 — тоже «ok» для fetch, поэтому проверяем первым
+  if (res.status === 200) {
+    const d = await res.json();
+    token = d.token; store.set("mayak.token", token); store.sset("mayak.invite", null); pending.set(null);
+    await boot();
+    return "ok";
+  }
+  if (!quiet) pending.set(null);
+  return "expired";
+}
 
 async function prepareLogin() {
   try {
-    login = await api("/api/auth/telegram", { method: "POST", body: { invite } });
+    login = await api("/api/auth/telegram", { method: "POST", body: { invite, return: "/my/" } });
     login.until = Date.now() + login.expiresInSeconds * 1000 - 15000;
     const a = $("#tg");
     if (a) { a.href = login.botUrl; a.removeAttribute("aria-disabled"); }
@@ -233,27 +257,36 @@ async function prepareLogin() {
     const h = $("#loginHint"); if (h) h.innerHTML = `<span class="err">${esc(e.message)}</span>`;
   }
 }
-async function pollLogin() {
-  if (polling || !login) return;
-  polling = true;
-  $("#loginHint").innerHTML = "Нажмите в боте «Запустить» — потом вернитесь сюда, вход завершится сам.";
+async function pollLogin(id = login?.requestId, until = login ? login.until + 15000 : 0) {
+  if (!id || pollLogin.active === id) return;
+  pollLogin.active = id;
+  pending.set({ id, until });
+  const hint = $("#loginHint");
+  if (hint) hint.innerHTML = "В боте нажмите «Запустить», затем — кнопку <b>«Вернуться на сайт»</b> в его ответе.";
+  let result = "timeout";
   try {
-    while (Date.now() < login.until + 15000) {
-      const res = await fetch(`/api/auth/telegram/${encodeURIComponent(login.requestId)}?client=site`);
-      if (res.ok) {
-        const d = await res.json();
-        token = d.token; store.set("mayak.token", token); store.sset("mayak.invite", null);
-        polling = false; return boot();
-      }
-      if (res.status !== 202) break;
+    while (Date.now() < until && pollLogin.active === id) {
+      result = await finishLogin(id, { quiet: true });
+      if (result !== "pending") break;
       await new Promise(ok => setTimeout(ok, 2000));
     }
   } catch {}
-  polling = false;
-  $("#loginHint").textContent = "Время на вход вышло — нажмите кнопку ещё раз.";
+  if (pollLogin.active !== id) return;      // уже ждём другой, более новый вход
+  pollLogin.active = null;
+  if (result === "ok" || me) return;
+  if (pending.get()?.id === id) pending.set(null);
+  if ($("#loginHint")) $("#loginHint").textContent = "Время на вход вышло — нажмите кнопку ещё раз.";
   await prepareLogin();
 }
-document.addEventListener("visibilitychange", () => { if (!document.hidden && !me && login && $("#tg")?.dataset.clicked) pollLogin(); });
+// Вернулись из Telegram на ту же вкладку — сразу проверяем, подтверждён ли вход.
+function resume() {
+  if (me || document.hidden) return;
+  const p = pending.get();
+  if (p) pollLogin(p.id, p.until);
+}
+document.addEventListener("visibilitychange", resume);
+window.addEventListener("pageshow", resume);
+window.addEventListener("focus", resume);
 
 function renderLogin() {
   $("#who").innerHTML = "";
@@ -261,7 +294,7 @@ function renderLogin() {
       <svg width="56" height="56" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="#0E1A2B"/><path d="M12 4.5l1.3 2h-2.6l1.3-2z" fill="#F5A524"/><path d="M10 7.5h4l1.1 10h-6.2L10 7.5z" fill="#fff"/><path d="M5.5 8l3.3 1.2M18.5 8l-3.3 1.2" stroke="#F5A524" stroke-width="1.3" stroke-linecap="round"/></svg>
       <h1>${invite ? "Вас пригласили в Маяк" : "Маяк"}</h1>
       <p class="muted">${invite ? "Войдите через Telegram — и ваши устройства появятся здесь, с ключами для приложения." : "Войдите через Telegram, чтобы получить ключ для приложения на своём телефоне или компьютере."}</p>
-      <a class="btn tg w" id="tg" href="#" target="_blank" rel="noopener" aria-disabled="true" style="margin-top:8px">
+      <a class="btn tg w" id="tg" href="#"${isPhone ? "" : ' target="_blank" rel="noopener"'} aria-disabled="true" style="margin-top:8px">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff" aria-hidden="true"><path d="M21.5 4.3L2.9 11.5c-1.1.4-1.1 1.2-.2 1.5l4.7 1.5 1.8 5.6c.2.6.4.8.9.8.4 0 .6-.2.9-.4l2.3-2.2 4.7 3.5c.9.5 1.5.2 1.7-.8l3.1-14.6c.3-1.3-.5-1.8-1.3-1.5zM8.7 14l9.1-5.7c.4-.3.8-.1.5.2l-7.7 7-.3 3.2L8.7 14z"/></svg>
         Войти через Telegram</a>
       <p class="muted" id="loginHint" style="margin-top:12px">Бот попросит нажать «Запустить» — это и есть вход. Пароли не нужны.</p>
@@ -269,10 +302,12 @@ function renderLogin() {
   const a = $("#tg");
   a.onclick = e => {
     if (!login) { e.preventDefault(); return; }
-    a.dataset.clicked = "1";
-    pollLogin();
+    // Запоминаем до перехода: на телефоне страница может выгрузиться, пока человек в Telegram.
+    pollLogin(login.requestId, login.until + 15000);
   };
   prepareLogin();
+  const p = pending.get();
+  if (p) pollLogin(p.id, p.until);
 }
 
 function logout() {
@@ -282,6 +317,13 @@ function logout() {
 
 // ───── Кабинет ─────
 async function boot() {
+  if (!token && returned && !boot.triedReturn) {
+    boot.triedReturn = true;
+    $("#app").innerHTML = `<div class="card hero muted">Завершаем вход…</div>`;
+    const r = await finishLogin(returned).catch(() => "expired");
+    if (r === "ok") return;
+    if (r === "pending") { pending.set({ id: returned, until: Date.now() + 9 * 60000 }); }
+  }
   if (!token) return render();
   try { state = await api("/api/me"); me = state.account; } catch { me = null; }
   render();

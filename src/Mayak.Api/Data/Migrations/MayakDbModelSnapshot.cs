@@ -282,6 +282,9 @@ namespace Mayak.Api.Data.Migrations
                     b.Property<string>("InviteHash")
                         .HasColumnType("text");
 
+                    b.Property<string>("ReturnPath")
+                        .HasColumnType("text");
+
                     b.Property<long?>("TelegramId")
                         .HasColumnType("bigint");
 
@@ -290,6 +293,9 @@ namespace Mayak.Api.Data.Migrations
 
                     b.Property<string>("TelegramUsername")
                         .HasColumnType("text");
+
+                    b.Property<int>("Uses")
+                        .HasColumnType("integer");
 
                     b.HasKey("Id");
 
