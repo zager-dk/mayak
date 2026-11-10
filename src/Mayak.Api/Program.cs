@@ -42,9 +42,9 @@ builder.Services.AddSingleton(tgOptions);
 builder.Services.AddSingleton(new GatewayKeys(cfg["Gateway:PrivateKeyPath"] ?? "/etc/mayak/gateway.pem"));
 builder.Services.AddSingleton<TelegramClient>();
 if (cfg.GetValue("Telegram:Polling", true)) builder.Services.AddHostedService<TelegramBotService>();
-// Проверка доступности серверов с машины API (этап A, PROBES_PLAN.md): по кнопке в админке.
-// Фоновые проверки раз в минуту — только при Probes:Background=true (по умолчанию выключены).
-if (cfg.GetValue("Probes:Enabled", true) && cfg.GetValue("Probes:Background", false)) builder.Services.AddHostedService<ServerProbeService>();
+// Проверка доступности серверов с машины API (этап A, PROBES_PLAN.md): фоном раз в 5 минут (Probes:IntervalSeconds)
+// и по кнопке в админке. Фон выключается Probes:Background=false, всё целиком — Probes:Enabled=false.
+if (cfg.GetValue("Probes:Enabled", true) && cfg.GetValue("Probes:Background", true)) builder.Services.AddHostedService<ServerProbeService>();
 builder.Services.ConfigureHttpJsonOptions(o =>
 {
     o.SerializerOptions.Converters.Add(new JsonStringEnumConverter());

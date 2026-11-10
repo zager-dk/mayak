@@ -49,6 +49,21 @@ Check("скрипт: umask 077 и архив до удаления", script.Cont
     && script.IndexOf("tar czf", StringComparison.Ordinal) < script.IndexOf("rm -f", StringComparison.Ordinal));
 Check("скрипт не печатает содержимое (только метки STEP_)", !script.Contains("cat ") && script.Split('\n').Where(l => l.Contains("echo")).All(l => l.Contains("echo STEP_")));
 
+// 8. Пинг с машины API: правило ACCEPT только для её IPv4, вставляется первым, под sudo; мусор не принимается.
+var icmp = new FakeServer { Root = false };
+SshProvisioningBackend.AllowProbeIcmp(icmp, "5.42.104.30");
+var cmd = icmp.Commands.Single();
+Check("пинг: правило для одного адреса /32, вставка первой строкой, под sudo",
+    cmd.Contains("sudo -n iptables -C INPUT -p icmp --icmp-type echo-request -s 5.42.104.30/32 -j ACCEPT") &&
+    cmd.Contains("|| sudo -n iptables -I INPUT 1 -p icmp --icmp-type echo-request -s 5.42.104.30/32 -j ACCEPT"));
+var junk = new FakeServer();
+SshProvisioningBackend.AllowProbeIcmp(junk, "5.42.104.30; rm -rf /");
+SshProvisioningBackend.AllowProbeIcmp(junk, "::1");
+SshProvisioningBackend.AllowProbeIcmp(junk, null);
+Check("пинг: недопустимый адрес, IPv6 и пусто — без команд", junk.Commands.Count == 0);
+Check("адрес API берётся из IP в PublicUrl", SshProvisioningBackend.ResolveProbeSource("https://5.42.104.30") == "5.42.104.30"
+    && SshProvisioningBackend.ResolveProbeSource("http://127.0.0.1:5080") == null);
+
 Console.WriteLine($"passed={passed} failed={failed}");
 return failed == 0 ? 0 : 1;
 
@@ -90,6 +105,7 @@ sealed class FakeServer : IShell
             return new(0, "STEP_ARCHIVED\nSTEP_CONTAINERS\nSTEP_SERVICES\nSTEP_DONE\n", "");
         }
         if (command.StartsWith("rm -f '/tmp/")) return new(0, "", "");
+        if (command.Contains("iptables -C INPUT -p icmp")) return new(0, "", "");
         throw new InvalidOperationException("Unexpected command: " + command);
     }
 }

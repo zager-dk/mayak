@@ -252,7 +252,35 @@ public sealed class SshProvisioningBackend : IProvisioningBackend
                 throw new ProvisioningException("New cluster identity failed local runtime verification");
         }
 
+        AllowProbeIcmp(ssh, ResolveProbeSource(api));
         await InstallAgentAsync(ssh, context, api, progress, ct);
+    }
+
+    /// <summary>
+    /// Адрес машины API (с него идут проверки доступности): публичный IPv4 хоста PublicUrl. null — не удалось определить.
+    /// </summary>
+    internal static string? ResolveProbeSource(string api)
+    {
+        try
+        {
+            var host = new Uri(api).Host;
+            var ip = IPAddress.TryParse(host, out var literal) ? literal
+                : Dns.GetHostAddresses(host).FirstOrDefault(a => a.AddressFamily == AddressFamily.InterNetwork);
+            return ip != null && ip.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(ip) ? ip.ToString() : null;
+        }
+        catch (Exception) { return null; }
+    }
+
+    /// <summary>
+    /// prepare_host.sh закрывает ping для всех (как в Amnezia). Проверкам доступности из админки ping нужен только с машины API:
+    /// разрешаем echo-request ровно с этого адреса, правило ставится перед общим запретом. Как и запрет, правило не сохраняется
+    /// после перезагрузки. Ошибка здесь установку не останавливает: без правила просто не будет пинга в проверках.
+    /// </summary>
+    internal static void AllowProbeIcmp(IShell ssh, string? source)
+    {
+        if (source == null || !IPAddress.TryParse(source, out var ip) || ip.AddressFamily != AddressFamily.InterNetwork) return;
+        var rule = $"INPUT -p icmp --icmp-type echo-request -s {ip}/32 -j ACCEPT";
+        ssh.Run($"{ssh.Sudo}iptables -C {rule} 2>/dev/null || {ssh.Sudo}iptables -I {rule.Replace("INPUT ", "INPUT 1 ")}", TimeSpan.FromSeconds(15));
     }
 
     internal static string ValidateAgentApi(string publicUrl)

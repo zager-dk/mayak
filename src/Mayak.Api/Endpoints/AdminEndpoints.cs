@@ -242,7 +242,7 @@ public static class AdminEndpoints
             var probes = await db.ServerProbes.AsNoTracking().Where(p => p.At > from).ToListAsync(http.RequestAborted);
             var servers = probes.GroupBy(p => p.ServerId).ToDictionary(g => g.Key.ToString(),
                 g => ServerProbeStats.Summarize(g, now, window, 48));
-            return Results.Ok(new { at = now, hours = (int)window.TotalHours, background = cfg.GetValue("Probes:Background", false), servers });
+            return Results.Ok(new { at = now, hours = (int)window.TotalHours, background = cfg.GetValue("Probes:Enabled", true) && cfg.GetValue("Probes:Background", true), servers });
         });
 
         // Проверить сейчас: все серверы или один (?serverId=…). Один проход за раз; длится не больше ~10 с.

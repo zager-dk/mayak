@@ -15,7 +15,7 @@ namespace Mayak.Api.Services;
 /// Это проверка «сервер жив и путь из российского ДЦ открыт», а не проверка DPI мобильных провайдеров:
 /// рукопожатие .NET не совпадает с uTLS-отпечатком клиентов. Туннели AWG/Xray — этап B (PROBES_PLAN.md).
 /// Пишет только итог и задержку; трафика и адресов пользователей не касается.
-/// По умолчанию проверки запускаются кнопкой в админке (<see cref="RunOnceAsync"/>); фоновый режим — Probes:Background=true.
+/// Фоном раз в 5 минут и по кнопке в админке (<see cref="RunOnceAsync"/>); фон выключается Probes:Background=false.
 /// </summary>
 public sealed class ServerProbeService(IServiceScopeFactory scopes, IConfiguration cfg, ILogger<ServerProbeService> log) : BackgroundService
 {
@@ -48,7 +48,7 @@ public sealed class ServerProbeService(IServiceScopeFactory scopes, IConfigurati
 
     protected override async Task ExecuteAsync(CancellationToken stop)
     {
-        var interval = TimeSpan.FromSeconds(Math.Clamp(cfg.GetValue("Probes:IntervalSeconds", 60), 15, 3600));
+        var interval = TimeSpan.FromSeconds(Math.Clamp(cfg.GetValue("Probes:IntervalSeconds", 300), 15, 3600));
         var retention = TimeSpan.FromDays(Math.Clamp(cfg.GetValue("Probes:RetentionDays", 7), 1, 90));
         try { await Task.Delay(TimeSpan.FromSeconds(10), stop); } catch (OperationCanceledException) { return; }
         while (!stop.IsCancellationRequested)
