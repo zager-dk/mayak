@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru">
+<html lang="ru" data-theme="night">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -52,13 +52,30 @@
   .stats { display: flex; gap: 24px; flex-wrap: wrap; }
   .stats div b { display: block; font-size: 20px; }
   .err { color: var(--red); }
+  :focus-visible { outline: 3px solid var(--amber); outline-offset: 2px; }
+  .provision-form input, .provision-form button { min-height: 44px; }
+  .provision-box { border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-top: 12px; }
+  .provision-box[hidden] { display: none; }
+  .provision-step { font-weight: 600; margin: 0 0 4px; }
+  .provision-status { min-height: 1.5em; margin: 8px 0; }
+  .provision-error { color: var(--red); font-weight: 600; }
+  .blank-provision { max-width: 720px; }
+  .blank-provision .lead { font-size: 14px; margin: 0 0 14px; }
+  .blank-provision label { font-size: 13px; color: var(--text); margin-top: 12px; }
+  .blank-provision .hint { margin: 4px 0 10px; }
+  .blank-provision .advanced { margin: 12px 0; padding: 10px 0; border-block: 1px solid var(--line); }
+  .blank-provision .advanced summary { cursor: pointer; padding: 4px 0; color: var(--muted); }
+  .blank-provision .primary { width: 100%; min-height: 46px; margin-top: 8px; }
+  .blank-provision [hidden] { display: none !important; }
   #toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--navy); color: #fff; padding: 9px 16px; border-radius: 6px; display: none; z-index: 9; }
   .login { max-width: 420px; margin: 12vh auto; text-align: center; }
   @media (max-width: 640px) { .grid2 { grid-template-columns: 1fr; } td.hide, th.hide { display: none; } }
 </style>
+<link rel="icon" type="image/svg+xml" href="/newassets/mayak-v1/mayak-favicon-32.svg">
+<link rel="stylesheet" href="/newassets/mayak-v1/ui.css?v=20261110f"><script defer src="/newassets/mayak-v1/theme.js"></script>
 </head>
-<body>
-<header><b>Маяк</b><span class="muted" style="color:#8C9AAE">управление</span><span class="who" id="who"></span></header>
+<body class="admin-page">
+<header><div class="brand"><img src="/newassets/mayak-v1/mayak-f7-small-on.svg" width="34" height="34" alt="" aria-hidden="true"><span class="wordmark">маяк</span></div><span class="muted" style="color:#8C9AAE">управление</span><button type="button" class="theme-toggle" data-theme-toggle aria-label="Тема: ночь. Переключить на день">День</button><span class="who" id="who"></span></header>
 <nav id="tabs" hidden>
   <button data-t="people" class="on">Люди</button>
   <button data-t="servers">Серверы</button>
@@ -72,17 +89,32 @@
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} } };
-let token = store.get("mayak.token"), me = null, tab = "people", selected = null;
+let token = store.get("mayak.token"), me = null, tab = "people", selected = null, activeProvisionFlow = null;
 const kinds = { Windows: "Windows", Android: "Android", IPhone: "iPhone", Mac: "Mac", Linux: "Linux", Other: "Другое" };
 const rank = r => ({ owner: 3, admin: 2, support: 1 }[r] || 0);
 
 function toast(t) { const el = $("#toast"); el.textContent = t; el.style.display = "block"; clearTimeout(toast.t); toast.t = setTimeout(() => el.style.display = "none", 2600); }
+function provisionReasonMessage(reason) {
+  const messages = new Map([
+    ["Поддерживаются только Ubuntu 22.04 и 24.04.", "На этом сервере неподдерживаемая ОС. Поддерживаются Ubuntu 22.04 и 24.04."],
+    ["Поддерживается только архитектура x86_64.", "Сервер использует неподдерживаемую архитектуру. Нужна x86_64."],
+    ["Обнаружен существующий контейнер, VPN или агент; установка остановлена.", "На сервере уже обнаружены контейнеры, VPN или агент. Чтобы не затронуть существующие службы, установка остановлена."],
+    ["Один из необходимых портов уже занят.", "Необходимый VPN-порт уже занят. Освободите порт или выберите другой пустой сервер."],
+    ["Read-only проверка не смогла надёжно подтвердить пустое состояние сервера.", "Не удалось безопасно подтвердить, что сервер пустой. Проверьте его вручную или выберите новый сервер."]
+  ]);
+  return typeof reason === "string" ? (messages.get(reason) || "Проверка не прошла. Установка недоступна; проверьте сервер и повторите проверку.") : "Проверка не прошла. Установка недоступна; проверьте сервер и повторите проверку.";
+}
 async function api(path, opt = {}) {
   const r = await fetch(path, { ...opt, headers: { "Content-Type": "application/json", ...(token ? { Authorization: "Bearer " + token } : {}), ...(opt.headers || {}) }, body: opt.body ? JSON.stringify(opt.body) : undefined });
   if (r.status === 401) { logout(); throw new Error("Нужно войти заново"); }
   if (r.status === 204) return null;
   const data = await r.json().catch(() => null);
-  if (!r.ok) throw new Error(data?.error || ("Ошибка " + r.status));
+  if (!r.ok) {
+    const error = new Error(data?.error || ("Ошибка " + r.status));
+    error.status = r.status;
+    error.data = data;
+    throw error;
+  }
   return data;
 }
 const when = d => d ? new Date(d).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
@@ -93,7 +125,18 @@ function download(name, text) { const a = document.createElement("a"); a.href = 
 async function copy(text) { try { await navigator.clipboard.writeText(text); toast("Скопировано"); } catch { prompt("Скопируйте:", text); } }
 
 // ───── Вход ─────
-function logout() { if (token) fetch("/api/logout", { method: "POST", headers: { Authorization: "Bearer " + token } }).catch(() => {}); token = null; store.set("mayak.token", null); me = null; render(); }
+function clearProvisionSecrets() {
+  const pass = $("#provPassword"), user = $("#provUser");
+  if (pass) pass.value = "";
+  if (user) user.value = "";
+  if (activeProvisionFlow) {
+    activeProvisionFlow.password = "";
+    if (activeProvisionFlow.poll) clearTimeout(activeProvisionFlow.poll);
+  }
+  activeProvisionFlow = null;
+}
+window.addEventListener("pagehide", clearProvisionSecrets);
+function logout() { clearProvisionSecrets(); if (token) fetch("/api/logout", { method: "POST", headers: { Authorization: "Bearer " + token } }).catch(() => {}); token = null; store.set("mayak.token", null); me = null; render(); }
 async function startLogin() {
   const btn = $("#login"); btn.disabled = true;
   try {
@@ -129,6 +172,7 @@ async function boot() {
 }
 
 function render() {
+  if (tab !== "servers") clearProvisionSecrets();
   $("#who").innerHTML = me ? `${esc(me.name)} · <a href="#" id="out" style="color:#F5A524">выйти</a>` : "";
   if (me) $("#out").onclick = e => { e.preventDefault(); logout(); };
   $("#tabs").hidden = !(me && rank(me.role) >= 1);
@@ -144,7 +188,7 @@ function render() {
       <p class="muted">Управление доступно только администраторам.</p></div>`;
     return;
   }
-  document.querySelectorAll("#tabs button").forEach(b => { b.classList.toggle("on", b.dataset.t === tab); b.onclick = () => { tab = b.dataset.t; selected = null; render(); }; });
+  document.querySelectorAll("#tabs button").forEach(b => { b.classList.toggle("on", b.dataset.t === tab); b.onclick = () => { tab = b.dataset.t; selected = null; selectedServer = null; render(); }; });
   ({ people, servers, settings, audit })[tab]().catch(e => app.innerHTML = `<div class="card err">${esc(e.message)}</div>`);
 }
 
@@ -185,7 +229,8 @@ function showPerson(row) {
       <div><label>Заметка</label><input id="note" value="${esc(row.note || "")}" style="width:100%"></div>
       ${me.role === "owner" ? `<div><label>Роль</label><select id="role" style="width:100%">${["user", "support", "admin", "owner"].map(r => `<option ${r === a.role ? "selected" : ""}>${r}</option>`).join("")}</select></div>` : ""}
     </div>
-    <div class="row" style="margin-top:12px"><button class="b p" id="save">Сохранить</button><button class="b" id="invite">Ссылка в кабинет</button>${row.legacy ? `<span class="muted">перенесён из Маяка для Windows</span>` : ""}</div>
+    <div class="row" style="margin-top:12px"><button class="b p" id="save">Сохранить</button><button class="b" id="invite" ${a.enabled && a.active ? "" : "disabled"}>Выдать приглашение</button>${row.legacy ? `<span class="muted">перенесён из Маяка для Windows</span>` : ""}</div>
+    ${a.enabled && a.active ? `<p class="muted" style="margin-top:8px">Новый код заменит предыдущий неиспользованный. Передайте приглашение для регистрации в кабинете по email и паролю или для входа в приложении Маяк на Android/Windows.</p>` : `<p class="muted" role="status" style="margin-top:8px">Сначала включите аккаунт и убедитесь, что доступ действует. Приглашение само по себе доступ не включает.</p>`}
     <div id="inviteOut"></div></div>
     <div class="card"><div class="row"><h2 class="grow">Устройства</h2><select id="kind">${Object.entries(kinds).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select><button class="b" id="adddev">+ Устройство</button></div>
     <table><tr><th></th><th>Устройство</th><th class="hide">IP</th><th class="hide">Трафик</th><th>Был в сети</th><th></th></tr>
@@ -204,13 +249,19 @@ function showPerson(row) {
     if ($("#role")) body.role = $("#role").value;
     patch(body);
   };
-  if ($("#invite")) $("#invite").onclick = async () => {
+  if ($("#invite") && a.enabled && a.active) $("#invite").onclick = async () => {
     try {
       const r = await api(`/api/admin/accounts/${a.id}/invite`, { method: "POST" });
-      const text = `Привет! Это ссылка в личный кабинет Маяка — там ваши устройства и ключи для подключения. Откройте её на телефоне или компьютере:\n${r.url}`;
-      $("#inviteOut").innerHTML = `<p class="muted" style="margin-top:10px">Отправьте человеку. Ссылка одноразовая, действует ${r.expiresInDays} дней и открывает кабинет сразу, без Telegram. Нужен вход ещё на одном устройстве — создайте новую ссылку (старая неиспользованная перестанет работать).</p>
-        <pre>${esc(text)}</pre><button class="b" id="cpInv">Копировать</button>`;
-      $("#cpInv").onclick = () => copy(text);
+      const code = new URL(r.url, location.href).searchParams.get("invite");
+      if (!code) throw new Error("Сервер не вернул код приглашения");
+      const out = $("#inviteOut"); out.replaceChildren();
+      const hint = document.createElement("p"); hint.className = "muted"; hint.style.marginTop = "10px";
+      hint.textContent = `Передайте эту одноразовую ссылку для регистрации в кабинете по email и паролю или для входа в приложении на Android/Windows. Срок действия — ${r.expiresInDays} дней. Новый код заменит предыдущий неиспользованный.`;
+      const invitation = `https://mayaklight.ru/my/?invite=${encodeURIComponent(code)}`;
+      const link = document.createElement("a"); link.href = invitation; link.textContent = invitation; link.className = "muted"; link.style.overflowWrap = "anywhere";
+      const value = document.createElement("pre"); value.textContent = code;
+      const button = document.createElement("button"); button.type = "button"; button.className = "b"; button.textContent = "Копировать приглашение"; button.onclick = () => copy(invitation);
+      out.append(hint, link, value, button);
     } catch (e) { toast(e.message); }
   };
   $("#adddev").onclick = async () => {
@@ -240,38 +291,381 @@ function showFiles(a, dev, f) {
 }
 
 // ───── Серверы ─────
+// Доступность с машины API (Москва). Старый API без /probes — просто без значков.
+const probeNames = { icmp: "Пинг", tcp: "Порт Xray", tls: "TLS", awg: "Туннель AWG", xray: "Туннель Xray" };
+const probeErrors = { timeout: "нет ответа", refused: "порт закрыт", reset: "сброс соединения", unreachable: "недоступен", dns: "ошибка DNS", tls: "ошибка TLS", loss: "есть потери", unavailable: "проверка недоступна", error: "ошибка" };
+let probeData = null, selectedServer = null;
+function probeState(k) { return k.lastError === "unavailable" ? "na" : k.lastOk ? (k.lastError === "loss" ? "warn" : "ok") : "bad"; }
+function probeChips(id) {
+  const kinds = probeData?.servers?.[id];
+  if (!kinds?.length) return "";
+  const at = kinds.reduce((m, k) => k.lastAt > m ? k.lastAt : m, "");
+  return `<div class="probes" aria-label="Доступность с Москвы"><span class="muted probe-at">с Москвы ${esc(when(at))}</span>${kinds.map(k => {
+    const st = probeState(k);
+    const tail = st === "ok" || st === "warn" ? (k.lastMs != null ? `${k.lastMs} мс` : "есть") : (probeErrors[k.lastError] || "нет");
+    return `<span class="probe ${st}" title="${esc(probeNames[k.kind] || k.kind)}: ${esc(tail)} · за ${probeData.hours} ч успешно ${k.uptimePercent ?? "—"}%"><i aria-hidden="true"></i>${esc(probeNames[k.kind] || k.kind)} · ${esc(tail)}</span>`;
+  }).join("")}</div>`;
+}
+// Проверка по кнопке: несколько секунд, затем перерисовка списка (и открытой карточки).
+async function runProbes(serverId, button) {
+  const label = button.textContent;
+  button.disabled = true; button.textContent = "Проверяю…"; button.setAttribute("aria-busy", "true");
+  try {
+    await api("/api/admin/probes/run" + (serverId ? "?serverId=" + encodeURIComponent(serverId) : ""), { method: "POST" });
+    toast("Проверка завершена");
+    if (serverId) selectedServer = serverId;
+    render();
+  } catch (e) { toast(e.message); button.disabled = false; button.textContent = label; button.removeAttribute("aria-busy"); }
+}
+
+function probeHistory(id) {
+  const kinds = probeData?.servers?.[id];
+  const head = title => `<div class="row probe-title"><h3 class="grow">${title}</h3><button class="b" id="probeOne" type="button">Проверить сервер</button></div>`;
+  if (!probeData) return "";
+  if (!kinds?.length) return head("Доступность с Москвы") + `<p class="muted">Этот сервер ещё не проверялся. Нажмите «Проверить сервер» — проверка займёт несколько секунд.</p>`;
+  const filled = kinds.reduce((m, k) => Math.max(m, k.buckets.filter(b => b.okRatio != null).length), 0);
+  if (!probeData.background && filled < 4) {
+    const at = kinds.reduce((m, k) => k.lastAt > m ? k.lastAt : m, "");
+    return head(`Доступность с Москвы · ${esc(when(at))}`) + `<div class="probe-history">${kinds.map(k => {
+      const st = probeState(k);
+      const value = st === "ok" || st === "warn" ? (k.lastMs != null ? `${k.lastMs} мс` : "есть") : (probeErrors[k.lastError] || "нет");
+      return `<div class="probe-head"><span class="probe ${st}"><i aria-hidden="true"></i>${esc(probeNames[k.kind] || k.kind)}</span><span>${esc(value)}${k.lastError === "loss" ? " · есть потери" : ""}</span></div>`;
+    }).join("")}<p class="muted">Проверка из дата-центра в Москве: показывает, что сервер жив и путь из России открыт. Блокировки у мобильных и домашних провайдеров могут отличаться.</p></div>`;
+  }
+  return head(`Доступность с Москвы за ${probeData.hours} ч`) + `<div class="probe-history">${kinds.map(k => `
+    <div class="probe-line"><div class="probe-head"><b>${esc(probeNames[k.kind] || k.kind)}</b><span class="muted">${k.lastError === "unavailable" ? "проверка недоступна на сервере API" : `успешно ${k.uptimePercent ?? "—"}% · в среднем ${k.avgMs != null ? k.avgMs + " мс" : "—"}`}</span></div>
+    <div class="probe-bar" role="img" aria-label="${esc(probeNames[k.kind] || k.kind)}: история за ${probeData.hours} ч, успешно ${k.uptimePercent ?? "—"}%">${k.buckets.map(b => `<span class="${b.okRatio == null ? "none" : b.okRatio >= .99 ? "ok" : b.okRatio > 0 ? "warn" : "bad"}"></span>`).join("")}</div></div>`).join("")}
+    <p class="muted">Проверка из дата-центра в Москве: показывает, что сервер жив и путь из России открыт. Блокировки у мобильных и домашних провайдеров могут отличаться.</p></div>`;
+}
+
 async function servers() {
-  const app = $("#app"), list = await api("/api/admin/servers");
+  const app = $("#app");
+  const [list, probes] = await Promise.all([api("/api/admin/servers"), api("/api/admin/probes?hours=24").catch(() => null)]);
+  probeData = probes;
   const exits = list.filter(s => s.role === "exit");
-  app.innerHTML = `<div class="card"><div class="row"><h2 class="grow">Серверы</h2>${rank(me.role) >= 2 ? `<button class="b p" id="add">+ Сервер</button>` : ""}</div>
+  app.innerHTML = `<div class="card"><div class="row"><h2 class="grow">Серверы</h2><button class="b" id="probeAll" type="button">Проверить серверы</button>${rank(me.role) >= 2 ? `<button class="b p" id="addBlank">Добавить сервер</button>` : ""}</div>
     <div class="list" id="list"></div></div><div id="detail"></div>`;
-  if ($("#add")) $("#add").onclick = () => serverForm();
+  if ($("#addBlank")) $("#addBlank").onclick = () => blankServerForm();
+  $("#probeAll").onclick = () => runProbes(null, $("#probeAll"));
   const box = $("#list");
-  if (!list.length) box.innerHTML = `<p class="muted">Серверов нет. Добавьте выход за рубежом, на котором уже стоит VPN Маяка.</p>`;
+  if (!list.length) box.innerHTML = `<p class="muted">Серверов нет. Нажмите «Добавить сервер»: Маяк сам установит VPN по адресу и паролю SSH.</p>`;
   for (const s of list) {
     const el = document.createElement("div");
     const target = s.targetExitId ? exits.find(e => e.id === s.targetExitId)?.name : null;
     el.innerHTML = `<span class="dot ${s.lastError ? "warn" : s.online ? "on" : "off"}"></span><div class="grow"><b>${esc(s.name)}</b> <span class="muted">${esc(s.host)}</span>
-      <div class="muted">${s.role === "exit" ? "выход" + (s.active ? " · активный" : "") : "вход" + (target ? " → " + esc(target) : " · не пересылает")}${s.report?.dryRun ? " · <b>пробный режим</b>" : ""} · ${s.lastSeen ? "связь " + when(s.lastSeen) : "агент не выходил на связь"}</div>
-      ${s.lastError ? `<div class="err" style="font-size:12.5px">${esc(s.lastError)}</div>` : ""}</div>`;
-    el.onclick = () => serverDetail(s, exits);
+      <div class="muted">${s.role === "exit" ? "выход" + (s.active ? " · активный" : "") : "вход" + (target ? " → " + esc(target) : " · не пересылает")}${s.report?.dryRun ? " · <b>пробный режим</b>" : ""} · ${s.lastSeen ? "связь " + when(s.lastSeen) : "агент не выходил на связь"}${s.provisioningStatus ? " · установка: " + esc(s.provisioningStatus) : ""}</div>
+      ${s.provisioningMessage ? `<div class="muted">${esc(s.provisioningMessage)}</div>` : ""}
+      ${s.lastError ? `<div class="err" style="font-size:12.5px">${esc(s.lastError)}</div>` : ""}${probeChips(s.id)}</div>`;
+    el.onclick = async () => {
+      clearProvisionSecrets();
+      selectedServer = s.id;
+      if (s.provisioningStatus) {
+        try { serverDetail({ ...s, ...(await api(`/api/admin/provision/jobs/${s.id}`)) }, exits); }
+        catch (e) { toast(e.message); serverDetail(s, exits); }
+      } else serverDetail(s, exits);
+    };
     box.appendChild(el);
+    if (selectedServer === s.id) el.onclick();
   }
 }
 
-function serverForm() {
-  $("#detail").innerHTML = `<div class="card"><h2>Новый сервер</h2><div class="grid2">
-    <div><label>Тип</label><select id="role" style="width:100%"><option value="exit">Выход (за рубежом, VPN уже установлен)</option><option value="entry">Вход (в России, пересылает на выход)</option></select></div>
-    <div><label>Адрес (IP)</label><input id="host" style="width:100%" placeholder="45.131.185.211"></div>
-    <div><label>Название</label><input id="name" style="width:100%" placeholder="Финляндия, Хельсинки"></div>
-    <div><label>Город · страна</label><div class="row"><input id="city" placeholder="Хельсинки" style="width:48%"><input id="country" placeholder="Финляндия" style="width:48%"></div></div>
-    </div><div class="row" style="margin-top:12px"><button class="b p" id="go">Добавить</button></div><div id="out"></div></div>`;
-  $("#go").onclick = async () => {
-    try {
-      const r = await api("/api/admin/servers", { method: "POST", body: { role: $("#role").value, host: $("#host").value, name: $("#name").value, city: $("#city").value, country: $("#country").value } });
-      installBox(r.install, r.installDryRun);
-    } catch (e) { toast(e.message); }
+function blankServerForm() {
+  clearProvisionSecrets();
+  const flow = activeProvisionFlow = {
+    password: "", poll: 0, jobId: null, fingerprint: "", trusted: false,
+    inspection: null, generation: 0, addressGeneration: 0,
+    inspectPending: false, startPending: false, startAttempted: false, fingerprintPending: false
   };
+  const detail = $("#detail");
+  detail.innerHTML = `<div class="card blank-provision">
+    <p class="muted" style="margin:0 0 6px">НОВЫЙ СЕРВЕР</p>
+    <h2>Добавить сервер</h2>
+    <p class="muted lead">Введите адрес и SSH пароль. Маяк проверит систему и сам подготовит VPN. Если на сервере уже что-то установлено, оно будет перезаписано: прежние настройки сохранятся в архив на самом сервере.</p>
+    <form id="provisionForm" class="provision-form" autocomplete="off" onsubmit="return false">
+      <label for="provHost">IP-адрес сервера</label>
+      <input id="provHost" required inputmode="decimal" placeholder="Публичный IPv4 из панели хостинга" style="width:100%" aria-describedby="provHostHint">
+      <p id="provHostHint" class="muted hint">Например, адрес из панели вашего хостинга.</p>
+      <label for="provPassword">Пароль SSH</label>
+      <input id="provPassword" type="password" maxlength="512" autocomplete="new-password" placeholder="Введите пароль root" required style="width:100%">
+      <details class="advanced"><summary>Дополнительные параметры</summary>
+        <div class="grid2">
+          <div><label for="provUser">Пользователь SSH</label><input id="provUser" value="root" maxlength="32" autocomplete="off" required style="width:100%"></div>
+          <div><label for="provPort">Порт SSH</label><input id="provPort" type="number" min="1" max="65535" value="22" required style="width:100%"></div>
+          <div><label for="provName">Название</label><input id="provName" maxlength="100" style="width:100%"></div>
+          <div><label for="provCity">Город (необязательно)</label><input id="provCity" maxlength="80" style="width:100%"></div>
+          <div><label for="provCountry">Страна (необязательно)</label><input id="provCountry" maxlength="80" style="width:100%"></div>
+        </div>
+      </details>
+      <p id="provError" class="provision-status provision-error" role="alert" tabindex="-1"></p>
+      <button class="b p primary" id="provFingerprint" type="button">Проверить сервер</button>
+      <section id="provTrustBox" class="provision-box" hidden aria-labelledby="provTrustTitle">
+        <h3 class="provision-step" id="provTrustTitle">Разрешить первое подключение</h3>
+        <p class="muted">При первом подключении сайт запомнит SSH-ключ этого адреса. Если ключ изменится, проверка остановится. Если адрес сервера верный и это ваш сервер, продолжайте.</p>
+        <details><summary>Показать SSH-ключ</summary><pre id="provFingerprintValue"></pre></details>
+        <button class="b p primary" id="provInspect" type="button" disabled>Доверять ключу и проверить доступ</button>
+        <p id="provInspectStatus" class="provision-status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="provInspectBox" class="provision-box" hidden aria-labelledby="provInspectTitle">
+        <h3 class="provision-step" id="provInspectTitle">Результат проверки</h3>
+        <p id="provInspectResult" class="provision-status" role="status" aria-live="polite"></p>
+        <div id="provInstallConfirm" hidden>
+          <p id="provOverwriteWarn" class="provision-warn" role="alert" hidden></p>
+          <label><input id="provBlankConfirm" type="checkbox"> <span id="provConfirmText">Разрешаю установить на этом сервере компоненты VPN.</span></label>
+          <button class="b p primary" id="provStart" type="button" disabled>Установить VPN</button>
+          <p id="provStartStatus" class="provision-status" role="status" aria-live="polite"></p>
+        </div>
+      </section>
+      <section id="provJobBox" class="provision-box" hidden aria-labelledby="provJobTitle">
+        <h3 class="provision-step" id="provJobTitle">Установка</h3>
+        <p id="provJobStatus" class="provision-status" role="status" aria-live="polite"></p>
+        <button class="b" id="provBack" type="button">Вернуться к серверам</button>
+      </section>
+    </form></div>`;
+
+  const live = generation => activeProvisionFlow === flow && flow.generation === generation;
+  const error = text => { const el = $("#provError"); if (el && activeProvisionFlow === flow) { el.textContent = text; el.focus(); } };
+  const credentialsSnapshot = () => ({
+    host: $("#provHost").value.trim(), port: Number($("#provPort").value),
+    user: $("#provUser").value.trim(), password: $("#provPassword").value,
+    trustedFingerprint: flow.fingerprint, trustFingerprint: flow.trusted
+  });
+  const invalidateInspection = () => {
+    if (activeProvisionFlow !== flow) return;
+    flow.generation++;
+    flow.inspection = null;
+    $("#provInspectBox").hidden = true;
+    $("#provInstallConfirm").hidden = true;
+    if ($("#provBlankConfirm")) $("#provBlankConfirm").checked = false;
+    if ($("#provStart")) $("#provStart").disabled = true;
+    $("#provInspectStatus").textContent = "";
+  };
+  const invalidateAddress = () => {
+    if (activeProvisionFlow !== flow) return;
+    flow.generation++;
+    flow.addressGeneration++;
+    flow.fingerprint = "";
+    flow.trusted = false;
+    flow.inspection = null;
+    flow.password = "";
+    $("#provPassword").value = "";
+    $("#provFingerprint").hidden = false;
+    $("#provFingerprint").disabled = false;
+    $("#provFingerprint").textContent = "Проверить сервер";
+    $("#provTrustBox").hidden = true;
+    $("#provInspectBox").hidden = true;
+    $("#provError").textContent = "";
+    $("#provInspectStatus").textContent = "";
+  };
+  const setBusy = busy => {
+    for (const id of ["provHost", "provPort", "provUser", "provPassword", "provName", "provCity", "provCountry"])
+      if ($("#" + id)) $("#" + id).disabled = busy;
+  };
+  const sendCredentials = (path, extra, generation) => {
+    if (!live(generation)) throw new Error("Форма изменилась. Повторите проверку.");
+    const body = { ...credentialsSnapshot(), ...extra };
+    const pending = api(path, { method: "POST", body });
+    body.password = "";
+    return pending;
+  };
+
+  $("#provHost").addEventListener("input", invalidateAddress);
+  $("#provPort").addEventListener("input", invalidateAddress);
+  $("#provUser").addEventListener("input", invalidateInspection);
+  $("#provPassword").addEventListener("input", invalidateInspection);
+  for (const id of ["provName", "provCity", "provCountry"])
+    $("#" + id).addEventListener("input", invalidateInspection);
+
+  $("#provFingerprint").onclick = async () => {
+    if (activeProvisionFlow !== flow || flow.fingerprintPending || flow.fingerprint || !$("#provisionForm").reportValidity()) return;
+    flow.fingerprintPending = true;
+    const generation = flow.generation, addressGeneration = flow.addressGeneration;
+    const host = $("#provHost").value.trim(), port = Number($("#provPort").value);
+    const button = $("#provFingerprint");
+    button.disabled = true; button.textContent = "Проверяю адрес…";
+    $("#provError").textContent = "";
+    try {
+      const result = await api("/api/admin/provision/host-key", { method: "POST", body: { host, port } });
+      if (!live(generation) || addressGeneration !== flow.addressGeneration || host !== $("#provHost").value.trim() || port !== Number($("#provPort").value)) return;
+      if (result.host !== host || Number(result.port) !== port || !/^SHA256:[A-Za-z0-9+/]{43}$/.test(result.fingerprint || ""))
+        throw new Error("Сервер вернул неожиданные данные SSH-ключа. Проверьте адрес и попробуйте ещё раз.");
+      flow.fingerprint = result.fingerprint;
+      flow.trusted = false;
+      $("#provFingerprintValue").textContent = `${result.fingerprint}\n${host}:${port}`;
+      $("#provTrustBox").hidden = false;
+      $("#provFingerprint").hidden = true;
+      $("#provInspect").disabled = !$("#provPassword").value;
+      $("#provInspectStatus").textContent = "SSH-ключ получен без отправки пароля.";
+    } catch (e) {
+      if (live(generation) && addressGeneration === flow.addressGeneration) {
+        flow.password = ""; flow.trusted = false; flow.fingerprint = ""; flow.inspection = null;
+        $("#provPassword").value = ""; $("#provTrustBox").hidden = true;
+        $("#provFingerprint").hidden = false; $("#provFingerprint").disabled = false;
+        error("Не удалось получить SSH-ключ без пароля. Проверьте IP-адрес и доступность SSH.");
+      }
+    } finally {
+      flow.fingerprintPending = false;
+      if (activeProvisionFlow === flow && button.isConnected && !button.hidden) {
+        button.disabled = false; button.textContent = "Проверить сервер";
+      }
+    }
+  };
+  $("#provPassword").addEventListener("input", () => {
+    if (flow.fingerprint) $("#provInspect").disabled = !$("#provPassword").value || flow.inspectPending;
+  });
+
+  $("#provInspect").onclick = async () => {
+    if (activeProvisionFlow !== flow || flow.inspectPending || flow.startPending || flow.startAttempted || flow.fingerprintPending || !flow.fingerprint || !$("#provPassword").value || !$("#provisionForm").reportValidity()) return;
+    flow.inspectPending = true;
+    flow.trusted = true; // This click explicitly accepts first-use pinning for this address.
+    flow.inspection = null;
+    $("#provInspectBox").hidden = true;
+    $("#provInstallConfirm").hidden = true;
+    $("#provBlankConfirm").checked = false;
+    $("#provStart").disabled = true;
+    const generation = ++flow.generation;
+    $("#provError").textContent = "";
+    $("#provInspectStatus").textContent = "Проверяю пароль, систему и свободные порты. Установка пока не запускается.";
+    $("#provInspect").disabled = true;
+    setBusy(true);
+    try {
+      const result = await sendCredentials("/api/admin/provision/inspect", {}, generation);
+      if (!live(generation)) return;
+      const x = result?.inspection;
+      if (!x || x.supported !== true || !Number.isInteger(x.awgPort) || x.awgPort < 1 || x.awgPort > 65535 ||
+          !Number.isInteger(x.xrayPort) || x.xrayPort < 1 || x.xrayPort > 65535 || x.awgPort === x.xrayPort) {
+        flow.inspection = x || null;
+        $("#provInspectBox").hidden = false;
+        $("#provInstallConfirm").hidden = true;
+        $("#provInspectResult").textContent = provisionReasonMessage(x?.reason);
+        $("#provInspectStatus").textContent = "Установка недоступна, пока проверка не пройдёт.";
+        $("#provPassword").value = "";
+        flow.password = "";
+        return;
+      }
+      flow.inspection = { ...x, host: $("#provHost").value.trim(), port: Number($("#provPort").value), user: $("#provUser").value.trim() };
+      const occupied = x.occupied === true;
+      $("#provInspectResult").textContent = occupied
+        ? `${x.operatingSystem || "Система"} ${x.osVersion || ""} · ${x.architecture || ""}. Сервер не пустой. Установка ещё не запущена.`
+        : `${x.operatingSystem || "Система"} ${x.osVersion || ""} · ${x.architecture || ""}. Проверка прошла; UDP ${x.awgPort} и TCP ${x.xrayPort} свободны. Установка ещё не запущена.`;
+      $("#provOverwriteWarn").hidden = !occupied;
+      $("#provOverwriteWarn").textContent = occupied
+        ? "На сервере найдены контейнеры, VPN или агент. При установке они будут удалены: все контейнеры Docker, службы и интерфейсы WireGuard/AmneziaWG/OpenVPN/Xray и прежний агент Маяка. Перед удалением настройки сохраняются в архив /root/mayak-overwrite-….tar.gz на этом сервере."
+        : "";
+      $("#provConfirmText").textContent = occupied ? "Перезаписать сервер и установить VPN." : "Разрешаю установить на этом сервере компоненты VPN.";
+      $("#provStart").textContent = occupied ? "Перезаписать и установить" : "Установить VPN";
+      $("#provInspectBox").hidden = false;
+      $("#provInstallConfirm").hidden = false;
+      $("#provBlankConfirm").checked = true;
+      $("#provStart").disabled = false;
+      $("#provInspectStatus").textContent = occupied ? "Проверьте предупреждение и нажмите «Перезаписать и установить»." : "Можно начинать установку.";
+    } catch (e) {
+      if (live(generation)) {
+        flow.inspection = null;
+        $("#provPassword").value = "";
+        flow.password = "";
+        const reason = e?.data?.inspection?.reason;
+        const knownProvisionReason = typeof reason === "string";
+        const safeReason = provisionReasonMessage(reason);
+        $("#provInspectBox").hidden = false;
+        $("#provInstallConfirm").hidden = true;
+        $("#provInspectResult").textContent = safeReason;
+        $("#provInspectStatus").textContent = knownProvisionReason
+          ? "Проверка остановлена. Пароль очищен; закреплённый SSH-ключ сохранён для этого адреса."
+          : "Не удалось завершить проверку SSH-доступа. Пароль очищен; проверьте данные подключения и попробуйте снова.";
+        error(knownProvisionReason ? safeReason : "Не удалось проверить SSH-доступ. Проверьте адрес, имя пользователя и SSH-доступ. Закреплённый ключ сохранён; после исправления введите пароль и повторите проверку.");
+      }
+    } finally {
+      flow.inspectPending = false;
+      if (activeProvisionFlow === flow && live(generation)) {
+        setBusy(false);
+        $("#provInspect").disabled = !flow.fingerprint || !$("#provPassword").value;
+      }
+    }
+  };
+
+  $("#provBlankConfirm").onchange = e => {
+    $("#provStart").disabled = !e.target.checked || !flow.inspection?.supported || flow.startPending || flow.startAttempted;
+  };
+  $("#provStart").onclick = async () => {
+    if (activeProvisionFlow !== flow || flow.inspectPending || flow.fingerprintPending || flow.startPending || flow.startAttempted || !flow.trusted ||
+        !flow.inspection?.supported || !$("#provPassword").value || !$("#provBlankConfirm").checked) return;
+    const inspection = flow.inspection;
+    if (inspection.host !== $("#provHost").value.trim() || inspection.port !== Number($("#provPort").value) ||
+        inspection.user !== $("#provUser").value.trim()) {
+      error("Данные подключения изменились. Повторите проверку сервера.");
+      return;
+    }
+    const awgPort = inspection.awgPort, xrayPort = inspection.xrayPort;
+    if (!Number.isInteger(awgPort) || !Number.isInteger(xrayPort) || awgPort === xrayPort) {
+      error("Настройки портов изменились. Повторите проверку сервера.");
+      return;
+    }
+    flow.startPending = true;
+    flow.startAttempted = true;
+    const generation = ++flow.generation;
+    const button = $("#provStart");
+    button.disabled = true; button.textContent = "Отправляю запрос…";
+    $("#provStartStatus").textContent = "Создаю одну задачу установки…";
+    setBusy(true);
+    const host = $("#provHost").value.trim();
+    const extra = {
+      name: $("#provName").value.trim() || host,
+      city: $("#provCity").value.trim(), country: $("#provCountry").value.trim(),
+      awgPort, xrayPort, confirmBlankServer: true, overwrite: inspection.occupied === true
+    };
+    try {
+      const result = await sendCredentials("/api/admin/provision/start", extra, generation);
+      if (!live(generation)) return;
+      if (!result?.jobId) throw new Error("Сервер не подтвердил создание задачи. Проверьте список серверов перед новой попыткой.");
+      flow.jobId = result.jobId;
+      flow.fingerprint = ""; flow.trusted = false; flow.inspection = null; flow.password = "";
+      $("#provPassword").value = "";
+      $("#provFingerprint").hidden = true;
+      $("#provTrustBox").hidden = true;
+      $("#provInspectBox").hidden = true;
+      $("#provJobBox").hidden = false;
+      $("#provJobStatus").textContent = "Задача принята. Сервер останется неактивным до подтверждения связи агента.";
+      $("#provBack").onclick = () => { clearProvisionSecrets(); tab = "servers"; selected = null; render(); };
+      pollProvisionJob(flow);
+    } catch (e) {
+      if (live(generation)) {
+        flow.fingerprint = ""; flow.trusted = false; flow.inspection = null; flow.password = "";
+        $("#provPassword").value = "";
+        $("#provFingerprint").hidden = true;
+        $("#provTrustBox").hidden = true;
+        $("#provInspectBox").hidden = true;
+        $("#provStartStatus").textContent = "Ответ не подтверждён. Автоповтор отключён, чтобы не создать дубликат. Вернитесь к списку и проверьте статус сервера перед любым повтором.";
+        $("#provJobBox").hidden = false;
+        $("#provJobStatus").textContent = "Ответ установки не подтверждён. Проверьте список серверов перед повторной попыткой.";
+        $("#provBack").onclick = () => { clearProvisionSecrets(); tab = "servers"; selected = null; render(); };
+        error("Задача установки не подтверждена. Вернитесь к списку серверов и проверьте её статус перед новой попыткой.");
+      }
+    } finally {
+      flow.startPending = false;
+      if (activeProvisionFlow === flow && live(generation)) setBusy(false);
+    }
+  };
+}
+
+async function pollProvisionJob(flow) {
+  if (!activeProvisionFlow || activeProvisionFlow !== flow || !flow.jobId) return;
+  const messages = { queued: "Задача ожидает начала установки.", preflight: "Повторная read-only проверка перед установкой.", installing: "Подготовка нового сервера.", installing_awg: "Устанавливается AmneziaWG.", installing_xray: "Устанавливается Xray с кластерной identity.", installing_agent: "Настраивается агент.", awaiting_agent: "Ожидается связь агента и подтверждение синхронизации.", syncing: "Агент синхронизирует настройки.", installed: "Агент подтвердил identity и синхронизацию. Сервер сохранён неактивным.", failed: "Установка остановлена. Сервер оставлен неактивным; автоматическая очистка не выполнялась.", interrupted: "API перезапущен; учётные данные очищены. Перед новой попыткой проверьте сервер вручную." };
+  try {
+    const r = await api(`/api/admin/provision/jobs/${flow.jobId}`);
+    if (activeProvisionFlow !== flow) return;
+    // Remote provisioning messages may contain credentials or command output.
+    // Restrict this credential-bearing flow to known status labels.
+    $("#provJobStatus").textContent = messages[r.provisioningStatus] || "Статус задачи обновлён.";
+    if (["installed", "failed", "interrupted"].includes(r.provisioningStatus)) {
+      clearProvisionSecrets();
+      $("#provBack").hidden = false;
+      return;
+    }
+  } catch (e) {
+    if (activeProvisionFlow !== flow) return;
+    $("#provJobStatus").textContent = "Не удалось обновить статус задачи. Последнее показанное состояние может устареть.";
+  }
+  flow.poll = setTimeout(() => pollProvisionJob(flow), 2000);
 }
 
 function installBox(cmd, dry) {
@@ -297,24 +691,36 @@ function reportBox(s) {
 }
 
 function serverDetail(s, exits) {
+  const canActivate = !s.provisioningStatus || s.provisioningReady === true;
   $("#detail").innerHTML = `<div class="card"><div class="row"><h2 class="grow">${esc(s.name)}</h2>
-      ${s.role === "exit" && !s.active ? `<button class="b p" id="act">Сделать активным</button>` : ""}
+      ${s.role === "exit" && !s.active && canActivate ? `<button class="b p" id="act">Сделать активным</button>` : ""}
       ${rank(me.role) >= 2 ? `<button class="b" id="tok">Новая команда установки</button><button class="b d" id="del">Удалить</button>` : ""}</div>
     <div class="grid2">
       <div><label>Название</label><input id="name" value="${esc(s.name)}" style="width:100%"></div>
       <div><label>Адрес</label><input id="host" value="${esc(s.host)}" style="width:100%"></div>
       <div><label>Город · страна</label><div class="row"><input id="city" value="${esc(s.city)}" style="width:48%"><input id="country" value="${esc(s.country)}" style="width:48%"></div></div>
       <div><label>Чем знаменит (для карточки в приложении)</label><input id="fact" value="${esc(s.fact)}" style="width:100%"></div>
+      ${s.role === "exit" && rank(me.role) >= 2 ? `<div><label>Автовыбор в приложении</label><select id="autosel" style="width:100%"><option value="0">выключен</option><option value="1" ${s.autoSelectEnabled ? "selected" : ""}>включён</option></select></div>
+      <div><label>Адрес выхода в интернет (IPv4, через запятую)</label><input id="egress" value="${esc((s.expectedEgressIps || []).join(", "))}" placeholder="${esc(s.host)}" style="width:100%"></div>` : ""}
       ${s.role === "entry" ? `<div><label>Пересылать на выход</label><select id="target" style="width:100%"><option value="">— не пересылать —</option>${exits.map(e => `<option value="${e.id}" ${e.id === s.targetExitId ? "selected" : ""}>${esc(e.name)} (${esc(e.host)})</option>`).join("")}</select></div>` : ""}
     </div><div class="row" style="margin-top:12px"><button class="b p" id="save">Сохранить</button><span class="muted">агент ${esc(s.agentVersion || "—")}</span></div>
-    ${reportBox(s)}<div id="out"></div></div>`;
+    ${s.provisioningStatus ? `<p class="muted" role="status">Установка: ${esc(s.provisioningStatus)}. ${esc(s.provisioningMessage || "")}${!canActivate ? " Сервер останется неактивным до подтверждения identity и синхронизации." : ""}</p>` : ""}
+    ${probeHistory(s.id)}${reportBox(s)}<div id="out"></div></div>`;
   const patch = body => api(`/api/admin/servers/${s.id}`, { method: "PATCH", body }).then(() => { toast("Сохранено"); render(); }).catch(e => toast(e.message));
   $("#save").onclick = () => {
     const body = { name: $("#name").value, host: $("#host").value, city: $("#city").value, country: $("#country").value, fact: $("#fact").value };
     if ($("#target")) { if ($("#target").value) body.targetExitId = $("#target").value; else body.clearTarget = true; }
+    if ($("#autosel")) {
+      // Send only what changed: the API refuses to enable auto-select for a not-ready exit.
+      const egress = $("#egress").value.split(/[\s,;]+/).filter(Boolean);
+      if (egress.join(",") !== (s.expectedEgressIps || []).join(",")) body.expectedEgressIps = egress;
+      const auto = $("#autosel").value === "1";
+      if (auto !== !!s.autoSelectEnabled) body.autoSelectEnabled = auto;
+    }
     patch(body);
   };
   if ($("#act")) $("#act").onclick = () => confirm("Перевести трафик на этот выход? Входы переключатся на него.") && patch({ active: true });
+  if ($("#probeOne")) $("#probeOne").onclick = () => runProbes(s.id, $("#probeOne"));
   if ($("#tok")) $("#tok").onclick = async () => { if (!confirm("Старый токен агента перестанет работать. Продолжить?")) return; const r = await api(`/api/admin/servers/${s.id}/token`, { method: "POST" }); installBox(r.install, r.installDryRun); };
   if ($("#del")) $("#del").onclick = () => confirm(`Удалить «${s.name}» из списка? На самом сервере VPN продолжит работать.`) && api(`/api/admin/servers/${s.id}`, { method: "DELETE" }).then(render);
 }
@@ -328,8 +734,14 @@ async function settings() {
     <div><label>Адрес для пользователей (пусто — вход или активный выход)</label><input id="host" value="${esc(c.publicHost)}" placeholder="${esc(c.effectiveHost)}" style="width:100%"></div>
     <div><label>DNS</label><div class="row"><input id="dns1" value="${esc(c.dns1)}" style="width:48%"><input id="dns2" value="${esc(c.dns2)}" style="width:48%"></div></div>
     </div><div class="row" style="margin-top:12px"><button class="b p" id="save">Сохранить</button></div>
-    <p class="muted">Сейчас пользователи подключаются к <b>${esc(c.effectiveHost || "—")}</b>. AmneziaWG ${esc(c.awg.protocol)}, UDP ${c.awg.port}, подсеть ${esc(c.awg.subnet)}${c.xray ? ` · Xray TCP ${c.xray.port}, маскировка под ${esc(c.xray.sni)}` : ""}. Ревизия ${c.revision}.</p></div>`;
+    <p class="muted">Сейчас пользователи подключаются к <b>${esc(c.effectiveHost || "—")}</b>. AmneziaWG ${esc(c.awg.protocol)}, UDP ${c.awg.port}, подсеть ${esc(c.awg.subnet)}${c.xray ? ` · Xray TCP ${c.xray.port}, маскировка под ${esc(c.xray.sni)}` : ""}. Ревизия ${c.revision}.</p></div>
+    ${c.xray && c.xray.fingerprints ? `<div class="card"><h2>Xray для клиентов</h2>
+    <div><label>Отпечаток TLS в ссылках, подписках и конфигах</label>
+    <select id="xfp"><option value="">по умолчанию (${esc(c.xray.defaultFingerprint)})</option>${c.xray.fingerprints.map(f => `<option value="${esc(f)}"${f === c.xray.clientFingerprint ? " selected" : ""}>${esc(f)}</option>`).join("")}</select></div>
+    <div class="row" style="margin-top:12px"><button class="b p" id="xsave">Сохранить отпечаток</button></div>
+    <p class="muted">Сейчас выдаётся <b>${esc(c.xray.effectiveFingerprint)}</b>. Меняет только настройки у клиентов: серверы и их подтверждение не затрагиваются. Подписки обновятся при следующем обновлении в приложении.</p></div>` : ""}`;
   $("#save").onclick = () => api("/api/admin/cluster", { method: "PATCH", body: { title: $("#title").value, publicHost: $("#host").value, dns1: $("#dns1").value, dns2: $("#dns2").value } }).then(() => { toast("Сохранено"); render(); }).catch(e => toast(e.message));
+  if ($("#xsave")) $("#xsave").onclick = () => api("/api/admin/cluster", { method: "PATCH", body: { xrayClientFingerprint: $("#xfp").value } }).then(() => { toast("Сохранено"); render(); }).catch(e => toast(e.message));
 }
 
 async function audit() {

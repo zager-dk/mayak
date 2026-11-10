@@ -169,26 +169,57 @@ public sealed class TelegramBotService : BackgroundService
     private async Task ConfirmLoginAsync(MayakDb db, string requestId, Account? me, long userId, string? username, string name, long chatId, CancellationToken ct)
     {
         var req = await db.LoginRequests.FirstOrDefaultAsync(r => r.Id == requestId, ct);
-        if (req == null || req.Uses > 0 || req.AccountId != null || DateTime.UtcNow - req.CreatedAt > LoginLifetime)
+        if (req == null || req.Uses > 0 || req.AccountId != null || req.LinkAccountId != null && req.TelegramId != null ||
+            DateTime.UtcNow - req.CreatedAt > LoginLifetime)
         {
             await _tg.SendAsync(chatId, "Ссылка для входа устарела. Нажмите «Войти через Telegram» в приложении ещё раз.", ct);
             return;
         }
+
+        if (req.LinkAccountId is Guid linkId)
+        {
+            await LinkAsync(db, req, linkId, me, userId, username, name, chatId, ct);
+            return;
+        }
+
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
 
         // Пришёл по приглашению: привязываем Telegram к уже заведённому аккаунту (со всеми его устройствами).
         bool invited = false;
         if (req.InviteHash != null)
         {
             var inv = await db.Invites.Include(i => i.Account).FirstOrDefaultAsync(i => i.CodeHash == req.InviteHash, ct);
-            if (inv?.Account == null || inv.UsedAt != null || inv.ExpiresAt < DateTime.UtcNow)
+            var now = DateTime.UtcNow;
+            if (inv?.Account == null || inv.UsedAt != null || inv.ExpiresAt <= now)
             {
                 await _tg.SendAsync(chatId, "Приглашение устарело или уже использовано. Попросите новую ссылку.", ct);
                 return;
             }
             var target = inv.Account;
+            if (!target.Enabled)
+            {
+                await _tg.SendAsync(chatId, "Доступ к этому аккаунту отключён. Попросите администратора включить его.", ct);
+                return;
+            }
+            if (!target.IsActive(now))
+            {
+                await _tg.SendAsync(chatId, "Срок доступа к этому аккаунту закончился. Попросите администратора продлить его.", ct);
+                return;
+            }
             if (target.TelegramId != null && target.TelegramId != userId)
             {
                 await _tg.SendAsync(chatId, "Этот аккаунт уже привязан к другому Telegram. Напишите администратору.", ct);
+                return;
+            }
+            var claimed = await db.Invites.Where(i => i.CodeHash == req.InviteHash && i.UsedAt == null && i.ExpiresAt > now &&
+                    i.Account!.Enabled && (i.Account.PaidUntil == null || i.Account.PaidUntil > now))
+                .ExecuteUpdateAsync(s => s.SetProperty(i => i.UsedAt, now), ct);
+            if (claimed != 1)
+            {
+                var inactive = await db.Accounts.AnyAsync(a => a.Id == target.Id && (!a.Enabled || a.PaidUntil != null && a.PaidUntil <= now), ct);
+                await _tg.SendAsync(chatId, inactive
+                    ? "Доступ к этому аккаунту не активен. Попросите администратора проверить его."
+                    : "Приглашение устарело или уже использовано. Попросите новую ссылку.", ct);
                 return;
             }
             if (me != null && me.Id != target.Id)
@@ -205,8 +236,6 @@ public sealed class TelegramBotService : BackgroundService
             }
             target.TelegramId = userId;
             target.TelegramUsername = username;
-            target.Enabled = true;
-            inv.UsedAt = DateTime.UtcNow;
             db.Audit.Add(new AuditEntry { ActorId = target.Id, Action = "invite.accept", Details = $"{target.Name} @{username} {userId}" });
             me = target;
             invited = true;
@@ -237,6 +266,7 @@ public sealed class TelegramBotService : BackgroundService
         req.AccountId = me.Id;
         db.Audit.Add(new AuditEntry { ActorId = me.Id, Action = "login.telegram", Details = $"@{username} {userId}" });
         await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
 
         var text = !me.Enabled ? "Заявка на доступ отправлена. Как только её одобрят, я напишу сюда — и на сайте можно будет получить ключ."
             : isNew && me.Role == Roles.Owner ? "Готово: вы вошли и назначены владельцем Маяка."
@@ -253,6 +283,42 @@ public sealed class TelegramBotService : BackgroundService
             if (isNew) await NotifyAdminsAsync(db, $"Новый человек просит доступ: {me.Name}" + (username != null ? $" (@{username})" : "") +
                                                    $"\nОдобрить: /approve {me.Id.ToString()[..8]}", ct);
         }
+    }
+
+    /// <summary>
+    /// Первый шаг привязки Telegram к аккаунту с почтой и паролем: бот только запоминает, кто нажал «Запустить».
+    /// Привязка происходит после подтверждения в приложении (POST /api/auth/telegram/link/{id}/confirm), поэтому
+    /// пересланная ссылка на бота не даёт постороннему доступ к аккаунту. Новый аккаунт не создаётся.
+    /// </summary>
+    private async Task LinkAsync(MayakDb db, LoginRequest req, Guid accountId, Account? me, long userId, string? username, string name, long chatId, CancellationToken ct)
+    {
+        var target = await db.Accounts.FirstOrDefaultAsync(a => a.Id == accountId, ct);
+        var now = DateTime.UtcNow;
+        if (target == null || !target.IsActive(now))
+        {
+            await _tg.SendAsync(chatId, "Аккаунт для привязки не найден или доступ не активен. Напишите администратору.", ct);
+            return;
+        }
+        if (target.TelegramId != null && target.TelegramId != userId)
+        {
+            await _tg.SendAsync(chatId, "К этому аккаунту уже привязан другой Telegram. Напишите администратору.", ct);
+            return;
+        }
+        if (me != null && me.Id != target.Id)
+        {
+            // Пустой аккаунт, созданный ранее входом через бота, можно заменить; аккаунт с устройствами или паролем — нет.
+            if (!TelegramLink.IsReplaceable(me, await db.Devices.AnyAsync(d => d.AccountId == me.Id, ct)))
+            {
+                await _tg.SendAsync(chatId, "Этот Telegram уже привязан к другому аккаунту Маяка. Напишите администратору — он объединит их.", ct);
+                return;
+            }
+        }
+        req.TelegramId = userId;
+        req.TelegramUsername = username;
+        req.TelegramName = name;
+        await db.SaveChangesAsync(ct);
+        await _tg.SendAsync(chatId, "Почти готово: вернитесь в приложение Маяк и подтвердите привязку этого Telegram. " +
+                                    "Если вы не начинали привязку, ничего не делайте — без подтверждения в приложении она не произойдёт.", ct);
     }
 
     private async Task ApproveAsync(MayakDb db, string arg, Account admin, long chatId, CancellationToken ct)
@@ -272,10 +338,17 @@ public sealed class TelegramBotService : BackgroundService
             await _tg.SendAsync(chatId, "Такой заявки нет.", ct);
             return;
         }
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await DeviceWriteLock.AcquireAsync(db, ct);
+        var cluster = new ClusterService(db);
+        await cluster.ReconcilePoolCredentialsAsync(DateTime.UtcNow, ct);
+        await db.Entry(acc).ReloadAsync(ct);
         acc.Enabled = true;
         db.Audit.Add(new AuditEntry { ActorId = admin.Id, Action = "account.approve", Details = acc.Id.ToString() });
         await db.SaveChangesAsync(ct);
-        await new ClusterService(db).BumpAsync(ct);
+        await cluster.ReconcilePoolCredentialsAsync(DateTime.UtcNow, ct);
+        await tx.CommitAsync(ct);
+        await cluster.BumpAsync(ct);
         await _tg.SendAsync(chatId, $"Доступ для «{acc.Name}» включён.", ct);
         if (acc.TelegramId is long tid) await _tg.SendAsync(tid, "Доступ к Маяку одобрен — можно подключаться." + (_opt.SiteUrl is { Length: > 0 } site ? $"\nКлюч для приложения: {site}" : ""), ct);
     }

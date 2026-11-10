@@ -40,6 +40,13 @@ namespace Mayak.Api.Data.Migrations
                     b.Property<string>("Email")
                         .HasColumnType("text");
 
+                    b.Property<string>("LoginEmailNormalized")
+                        .HasMaxLength(254)
+                        .HasColumnType("character varying(254)");
+
+                    b.Property<string>("PasswordHash")
+                        .HasColumnType("text");
+
                     b.Property<bool>("Enabled")
                         .HasColumnType("boolean");
 
@@ -82,10 +89,31 @@ namespace Mayak.Api.Data.Migrations
                     b.HasIndex("Email")
                         .IsUnique();
 
+                    b.HasIndex("LoginEmailNormalized")
+                        .IsUnique();
+
                     b.HasIndex("TelegramId")
                         .IsUnique();
 
                     b.ToTable("Accounts");
+                });
+
+            modelBuilder.Entity("Mayak.Api.Data.AwgAllocation", b =>
+                {
+                    b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uuid");
+                    b.Property<Guid>("DeviceId").HasColumnType("uuid");
+                    b.Property<Guid>("ServerId").HasColumnType("uuid");
+                    b.Property<string>("AttemptId").IsRequired().HasMaxLength(128).HasColumnType("character varying(128)");
+                    b.Property<DateTime>("CreatedAt").HasColumnType("timestamp with time zone");
+                    b.Property<DateTime?>("ProvenAt").HasColumnType("timestamp with time zone");
+                    b.Property<DateTime?>("ReleasedAt").HasColumnType("timestamp with time zone");
+                    b.Property<string>("AuthKeyHash").HasMaxLength(64).HasColumnType("character varying(64)");
+                    b.HasKey("Id");
+                    b.HasIndex("AuthKeyHash");
+                    b.HasIndex("DeviceId", "AttemptId").IsUnique();
+                    b.HasIndex("DeviceId").IsUnique().HasFilter("\"ReleasedAt\" IS NULL");
+                    b.HasIndex("ServerId", "ReleasedAt");
+                    b.ToTable("AwgAllocations");
                 });
 
             modelBuilder.Entity("Mayak.Api.Data.AuditEntry", b =>
@@ -147,6 +175,10 @@ namespace Mayak.Api.Data.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("XrayClientFingerprint")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
                     b.Property<string>("XrayJson")
                         .HasColumnType("text");
 
@@ -167,6 +199,10 @@ namespace Mayak.Api.Data.Migrations
                     b.Property<Guid>("AccountId")
                         .HasColumnType("uuid");
 
+                    b.Property<bool>("AutoConnectManaged")
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<string>("AppVersion")
                         .HasColumnType("text");
 
@@ -186,11 +222,36 @@ namespace Mayak.Api.Data.Migrations
                     b.Property<int?>("DownMbps")
                         .HasColumnType("integer");
 
+                    b.Property<Guid?>("ExitEndpointId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ServiceProtocol")
+                        .HasColumnType("text");
+
+                    b.Property<long>("CredentialsRevision")
+                        .HasColumnType("bigint");
+
                     b.Property<bool>("Enabled")
                         .HasColumnType("boolean");
 
                     b.Property<string>("InstallationId")
                         .HasColumnType("text");
+
+                    b.Property<string>("SubscriptionTokenHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("AppTokenHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("StableDeviceHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("PreviousAppTokenHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
 
                     b.Property<string>("Ip")
                         .IsRequired()
@@ -234,7 +295,53 @@ namespace Mayak.Api.Data.Migrations
 
                     b.HasIndex("AccountId", "InstallationId");
 
+                    b.HasIndex("SubscriptionTokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("AppTokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("AccountId", "StableDeviceHash");
+
+                    b.HasIndex("PreviousAppTokenHash");
+
+                    b.HasIndex("ExitEndpointId");
+
                     b.ToTable("Devices");
+                });
+
+            modelBuilder.Entity("Mayak.Api.Data.ExitEndpoint", b =>
+                {
+                    b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uuid");
+                    b.Property<long>("AppliedCredentialsRevision").HasColumnType("bigint");
+                    b.Property<bool>("AllowNewConnections").HasColumnType("boolean");
+                    b.Property<int>("CapacitySlots").HasColumnType("integer");
+                    b.Property<bool>("ConfigValid").HasColumnType("boolean");
+                    b.Property<bool>("DryRun").HasColumnType("boolean");
+                    b.Property<string>("DesiredCredentialsHash").IsRequired().HasMaxLength(64).HasColumnType("character varying(64)");
+                    b.Property<string>("Flow").IsRequired().HasColumnType("text");
+                    b.Property<string>("Fingerprint").IsRequired().HasColumnType("text");
+                    b.Property<string>("Host").IsRequired().HasColumnType("text");
+                    b.Property<long>("IdentityVersion").HasColumnType("bigint");
+                    b.Property<int>("OccupiedSlots").HasColumnType("integer");
+                    b.Property<int>("Port").HasColumnType("integer");
+                    b.Property<string>("ProtocolError").HasColumnType("text");
+                    b.Property<DateTime?>("ProtocolReportReceivedAt").HasColumnType("timestamp with time zone");
+                    b.Property<string>("PublicKey").IsRequired().HasColumnType("text");
+                    b.Property<long>("ReportedCredentialsRevision").HasColumnType("bigint");
+                    b.Property<long>("ReportedIdentityVersion").HasColumnType("bigint");
+                    b.Property<string>("ShortId").IsRequired().HasColumnType("text");
+                    b.Property<string>("Sni").IsRequired().HasColumnType("text");
+                    b.Property<Guid>("ServerId").HasColumnType("uuid");
+                    b.Property<bool>("RuntimeReady").HasColumnType("boolean");
+                    b.Property<bool>("SelfTestPassed").HasColumnType("boolean");
+                    b.Property<string>("Transport").IsRequired().HasMaxLength(16).HasColumnType("character varying(16)");
+                    b.Property<string>("XhttpHost").IsRequired().HasColumnType("text");
+                    b.Property<string>("XhttpMode").IsRequired().HasColumnType("text");
+                    b.Property<string>("XhttpPath").IsRequired().HasColumnType("text");
+                    b.HasKey("Id");
+                    b.HasIndex("ServerId").IsUnique();
+                    b.ToTable("ExitEndpoints");
                 });
 
             modelBuilder.Entity("Mayak.Api.Data.Invite", b =>
@@ -282,6 +389,9 @@ namespace Mayak.Api.Data.Migrations
                     b.Property<string>("InviteHash")
                         .HasColumnType("text");
 
+                    b.Property<Guid?>("LinkAccountId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("ReturnPath")
                         .HasColumnType("text");
 
@@ -302,6 +412,22 @@ namespace Mayak.Api.Data.Migrations
                     b.ToTable("LoginRequests");
                 });
 
+            modelBuilder.Entity("Mayak.Api.Data.ServerProbe", b =>
+                {
+                    b.Property<long>("Id").ValueGeneratedOnAdd().HasColumnType("bigint");
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+                    b.Property<DateTime>("At").HasColumnType("timestamp with time zone");
+                    b.Property<string>("Error").HasMaxLength(64).HasColumnType("character varying(64)");
+                    b.Property<string>("Kind").IsRequired().HasMaxLength(16).HasColumnType("character varying(16)");
+                    b.Property<int?>("LatencyMs").HasColumnType("integer");
+                    b.Property<bool>("Ok").HasColumnType("boolean");
+                    b.Property<Guid>("ServerId").HasColumnType("uuid");
+                    b.HasKey("Id");
+                    b.HasIndex("At");
+                    b.HasIndex("ServerId", "At");
+                    b.ToTable("ServerProbes");
+                });
+
             modelBuilder.Entity("Mayak.Api.Data.Server", b =>
                 {
                     b.Property<Guid>("Id")
@@ -310,6 +436,10 @@ namespace Mayak.Api.Data.Migrations
 
                     b.Property<bool>("Active")
                         .HasColumnType("boolean");
+
+                    b.Property<bool>("AutoSelectEnabled").HasColumnType("boolean").HasDefaultValue(false);
+                    b.Property<int>("NativeCapacity").HasColumnType("integer").HasDefaultValue(50);
+                    b.Property<string>("ExpectedEgressIpsJson").IsRequired().HasColumnType("text").HasDefaultValue("[]");
 
                     b.Property<string>("AgentTokenHash")
                         .IsRequired()
@@ -357,6 +487,31 @@ namespace Mayak.Api.Data.Migrations
                     b.Property<string>("PhotoUrl")
                         .HasColumnType("text");
 
+                    b.Property<string>("ProvisioningStatus")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ProvisioningMessage")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("ProvisioningUpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("TrustedHostFingerprint")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("ProvisionIdentityMatched")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("ProvisioningConfirmedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long?>("ProvisioningConfirmedRevision")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ProvisioningIdentityHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<string>("Role")
                         .IsRequired()
                         .HasMaxLength(8)
@@ -400,6 +555,9 @@ namespace Mayak.Api.Data.Migrations
 
             modelBuilder.Entity("Mayak.Api.Data.Device", b =>
                 {
+                    b.HasOne("Mayak.Api.Data.ExitEndpoint", null)
+                        .WithMany().HasForeignKey("ExitEndpointId").OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("Mayak.Api.Data.Account", "Account")
                         .WithMany("Devices")
                         .HasForeignKey("AccountId")
@@ -407,6 +565,17 @@ namespace Mayak.Api.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Account");
+                });
+
+            modelBuilder.Entity("Mayak.Api.Data.AwgAllocation", b =>
+                {
+                    b.HasOne("Mayak.Api.Data.Device", null).WithMany().HasForeignKey("DeviceId").OnDelete(DeleteBehavior.Cascade).IsRequired();
+                    b.HasOne("Mayak.Api.Data.Server", null).WithMany().HasForeignKey("ServerId").OnDelete(DeleteBehavior.Cascade).IsRequired();
+                });
+
+            modelBuilder.Entity("Mayak.Api.Data.ServerProbe", b =>
+                {
+                    b.HasOne("Mayak.Api.Data.Server", null).WithMany().HasForeignKey("ServerId").OnDelete(DeleteBehavior.Cascade).IsRequired();
                 });
 
             modelBuilder.Entity("Mayak.Api.Data.Invite", b =>
@@ -429,6 +598,13 @@ namespace Mayak.Api.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Account");
+                });
+
+            modelBuilder.Entity("Mayak.Api.Data.ExitEndpoint", b =>
+                {
+                    b.HasOne("Mayak.Api.Data.Server", "Server").WithMany()
+                        .HasForeignKey("ServerId").OnDelete(DeleteBehavior.Cascade).IsRequired();
+                    b.Navigation("Server");
                 });
 
             modelBuilder.Entity("Mayak.Api.Data.Account", b =>

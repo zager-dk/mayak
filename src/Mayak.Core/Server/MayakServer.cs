@@ -37,6 +37,10 @@ public sealed class InstallOptions
     public bool InstallXray { get; set; } = true;
     public XrayInstallOptions Xray { get; set; } = new();
 
+    /// <summary>Optional existing cluster identity; used only when installing a new cluster clone.</summary>
+    public ServerEndpoint? SharedIdentity { get; set; }
+    public string? SharedServerPrivateKey { get; set; }
+
     /// <summary>Случайный порт 30000–49999, как AmneziaVPN: стандартные порты чаще блокируют.</summary>
     public static int RandomPort() => System.Security.Cryptography.RandomNumberGenerator.GetInt32(30000, 50000);
 }
@@ -103,10 +107,10 @@ public sealed partial class MayakServer : IDisposable
     public string? Fingerprint => _ssh.ServerFingerprint;
     public string? JumpFingerprint => _ssh.JumpFingerprint;
 
-    public MayakServer(SshCredentials creds)
+    public MayakServer(SshCredentials creds, bool cleanupStaleFiles = true)
     {
         _creds = creds;
-        _ssh = new SshConnection(creds);
+        _ssh = new SshConnection(creds, cleanupStaleFiles);
     }
 
     /// <summary>Управление через готовую оболочку (агент на самом сервере). publicHost — адрес для клиентов по умолчанию.</summary>
@@ -159,6 +163,21 @@ public sealed partial class MayakServer : IDisposable
     {
         void Step(string s) { step?.Invoke(s); Info("▸ " + s); }
 
+        if (opt.SharedIdentity != null)
+        {
+            var identity = opt.SharedIdentity;
+            if (string.IsNullOrWhiteSpace(opt.SharedServerPrivateKey) || string.IsNullOrWhiteSpace(identity.ServerPublicKey) ||
+                string.IsNullOrWhiteSpace(identity.PresharedKey) || identity.Port is < 1 or > 65535 ||
+                Curve25519.PublicKeyFromPrivate(opt.SharedServerPrivateKey) != identity.ServerPublicKey ||
+                string.IsNullOrWhiteSpace(identity.SubnetAddress) || string.IsNullOrWhiteSpace(identity.SubnetCidr))
+                throw new MayakException("Общая AWG identity неполная или не совпадает с приватным ключом.");
+            opt.Port = identity.Port;
+            opt.SubnetAddress = identity.SubnetAddress;
+            if (!int.TryParse(identity.SubnetCidr, out var sharedCidr))
+                throw new MayakException("Некорректная подсеть общей AWG identity.");
+            opt.SubnetCidr = sharedCidr;
+        }
+
         Step("Проверка сервера");
         var arch = _ssh.Run("uname -m").Output.Trim();
         if (arch is not ("x86_64" or "aarch64" or "arm64"))
@@ -199,9 +218,10 @@ public sealed partial class MayakServer : IDisposable
         _ssh.Run($"{S}docker network connect amnezia-dns-net {Container}");
 
         Step("Генерация ключей и конфигурации");
-        var (serverPriv, serverPub) = Curve25519.GenerateKeyPair();
-        var psk = Curve25519.GeneratePresharedKey();
-        var parameters = AwgParameters.Generate(opt.Version);
+        var serverPriv = opt.SharedIdentity != null ? opt.SharedServerPrivateKey! : Curve25519.GenerateKeyPair().PrivateKey;
+        var serverPub = opt.SharedIdentity?.ServerPublicKey ?? Curve25519.PublicKeyFromPrivate(serverPriv);
+        var psk = opt.SharedIdentity?.PresharedKey ?? Curve25519.GeneratePresharedKey();
+        var parameters = opt.SharedIdentity?.Parameters ?? AwgParameters.Generate(opt.Version);
 
         var conf = new StringBuilder();
         conf.Append("[Interface]\n");

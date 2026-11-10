@@ -1,6 +1,7 @@
 using Mayak.Api.Data;
 using Mayak.Api.Endpoints;
 using Mayak.Api.Services;
+using Mayak.Api.Provisioning;
 using Microsoft.EntityFrameworkCore;
 
 namespace Mayak.Api;
@@ -24,10 +25,17 @@ public static class Cli
                     : await db.Accounts.FirstOrDefaultAsync(a => a.TelegramUsername != null && a.TelegramUsername.ToLower() == who.ToLower());
                 if (acc == null) { Console.Error.WriteLine($"Нет аккаунта {args[1]}: человек должен сначала войти через бота."); return 1; }
                 if (!Roles.All.Contains(args[2])) { Console.Error.WriteLine("Роль: user, support, admin или owner"); return 1; }
+                await using var tx = await db.Database.BeginTransactionAsync();
+                await DeviceWriteLock.AcquireAsync(db, CancellationToken.None);
+                var cluster = new ClusterService(db);
+                await cluster.ReconcilePoolCredentialsAsync(DateTime.UtcNow, CancellationToken.None);
+                await db.Entry(acc).ReloadAsync();
                 acc.Role = args[2];
                 acc.Enabled = true;
                 db.Audit.Add(new AuditEntry { Action = "cli.role", Details = $"{acc.Name} → {acc.Role}" });
                 await db.SaveChangesAsync();
+                await cluster.ReconcilePoolCredentialsAsync(DateTime.UtcNow, CancellationToken.None);
+                await tx.CommitAsync();
                 Console.WriteLine($"{acc.Name}: роль {acc.Role}, доступ включён.");
                 return 0;
             }
@@ -36,12 +44,20 @@ public static class Cli
             {
                 var role = args[1];
                 if (role is not (ServerRoles.Exit or ServerRoles.Entry)) { Console.Error.WriteLine("Тип сервера: exit или entry"); return 1; }
+                await using var tx = await db.Database.BeginTransactionAsync();
+                await ProvisioningGuards.AcquireHostMutationLockAsync(db, CancellationToken.None);
+                var host = args[3].Trim();
+                if (string.IsNullOrWhiteSpace(host) || await ProvisioningGuards.HostExistsAsync(db, host, null, CancellationToken.None))
+                {
+                    Console.Error.WriteLine("Адрес уже зарегистрирован или пуст. Проверьте существующую запись сервера.");
+                    return 1;
+                }
                 var token = Tokens.New();
                 var s = new Server
                 {
                     Role = role,
                     Name = args[2],
-                    Host = args[3],
+                    Host = host,
                     City = args.ElementAtOrDefault(4) ?? "",
                     Country = args.ElementAtOrDefault(5) ?? "",
                     AgentTokenHash = Tokens.Hash(token),
@@ -50,6 +66,7 @@ public static class Cli
                 db.Servers.Add(s);
                 db.Audit.Add(new AuditEntry { Action = "cli.add-server", Details = $"{s.Role} {s.Name} {s.Host}" });
                 await db.SaveChangesAsync();
+                await tx.CommitAsync();
                 Console.WriteLine($"Сервер «{s.Name}» добавлен. Выполните на нём:");
                 Console.WriteLine();
                 Console.WriteLine(AdminEndpoints.InstallCommand(agentInstallUrl, publicUrl, token));

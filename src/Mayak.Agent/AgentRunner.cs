@@ -222,6 +222,7 @@ public sealed class AgentRunner
         if (server.GetState() != ServerState.Running)
         {
             report.Error = "VPN на сервере не установлен или остановлен";
+            report.ProvisioningProof = new ProvisioningRuntimeProof();
             return report;
         }
 
@@ -279,6 +280,26 @@ public sealed class AgentRunner
         }).ToList();
         report.ReservedIps = Reserved(snap, users);
         report.Warnings.AddRange(snap.Warnings);
+
+        // Provisioning proof is server-local and deliberately does not claim public reachability.
+        // Re-read both services/configuration after desired state was applied before acknowledging readiness.
+        var afterState = server.GetState();
+        var after = afterState == ServerState.Running ? server.Load() : null;
+        bool awgMatches = after != null && after.Endpoint.Port == snap.Endpoint.Port &&
+                          after.Endpoint.ServerPublicKey == snap.Endpoint.ServerPublicKey &&
+                          after.Endpoint.PresharedKey == snap.Endpoint.PresharedKey && after.Endpoint.SubnetAddress == snap.Endpoint.SubnetAddress;
+        bool xrayRunning = after?.XrayState == ServerState.Running && after.Xray != null;
+        bool xrayMatches = snap.Xray == null ? after?.Xray == null : after?.Xray is { } afterXray &&
+                           afterXray.Port == snap.Xray.Port && afterXray.PublicKey == snap.Xray.PublicKey &&
+                           afterXray.ShortId == snap.Xray.ShortId && afterXray.Sni == snap.Xray.Sni;
+        bool configLoaded = awgMatches && xrayMatches && xrayRunning;
+        report.ProvisioningProof = new ProvisioningRuntimeProof
+        {
+            AwgRunning = afterState == ServerState.Running,
+            XrayRunning = xrayRunning,
+            ConfigurationLoaded = configLoaded,
+            PostApplyCheckPassed = report.Error == null && !report.DryRun && report.AppliedRevision == state.Revision && configLoaded,
+        };
         return report;
     }
 

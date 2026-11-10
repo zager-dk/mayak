@@ -26,6 +26,7 @@ var pg = args.ElementAtOrDefault(0) ?? "Host=127.0.0.1;Port=55432;Username=postg
 var dbName = "mayak_agent_" + Guid.NewGuid().ToString("N")[..8];
 Environment.SetEnvironmentVariable("MAYAK_ConnectionStrings__Db", $"{pg};Database={dbName}");
 Environment.SetEnvironmentVariable("MAYAK_Telegram__Polling", "false");
+Environment.SetEnvironmentVariable("MAYAK_Probes__Enabled", "false");
 Environment.SetEnvironmentVariable("MAYAK_Logging__LogLevel__Default", "Warning");
 
 var log = new List<string>();

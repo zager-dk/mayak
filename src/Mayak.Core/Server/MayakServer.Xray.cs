@@ -12,6 +12,9 @@ public sealed class XrayInstallOptions
     public int Port { get; set; } = XrayDefaults.DefaultPort;
     /// <summary>Сайт, под который маскируется Reality.</summary>
     public string Sni { get; set; } = XrayDefaults.DefaultSni;
+    /// <summary>Existing shared cluster Reality identity; used only for a new clone server.</summary>
+    public XrayEndpoint? SharedIdentity { get; set; }
+    public string? SharedPrivateKey { get; set; }
 }
 
 /// <summary>Xray (VLESS + Reality + XHTTP) и служебная учётка для проверки протоколов.</summary>
@@ -77,6 +80,15 @@ public sealed partial class MayakServer
     {
         void Step(string s) { step?.Invoke(s); Info("▸ " + s); }
 
+        if (opt.SharedIdentity != null)
+        {
+            if (string.IsNullOrWhiteSpace(opt.SharedPrivateKey) || string.IsNullOrWhiteSpace(opt.SharedIdentity.PublicKey) ||
+                string.IsNullOrWhiteSpace(opt.SharedIdentity.ShortId) || opt.SharedIdentity.Port is < 1 or > 65535)
+                throw new MayakException("Общая Xray identity неполная.");
+            opt.Port = opt.SharedIdentity.Port;
+            opt.Sni = opt.SharedIdentity.Sni;
+        }
+
         var state = GetXrayState();
         if (state is ServerState.Running or ServerState.Stopped)
         {
@@ -111,32 +123,48 @@ public sealed partial class MayakServer
             $"-p {opt.Port}:{opt.Port}/tcp -p {opt.Port}:{opt.Port}/udp " +
             $"-v {XrayContainer}-data:{XrayDir} --name {XrayContainer} {XrayContainer}", "Запуск контейнера Xray");
         _ssh.Run($"{S}docker network connect amnezia-dns-net {XrayContainer}");
-        ExecContainer("mkdir -p /dev/net; if [ ! -c /dev/net/tun ]; then mknod /dev/net/tun c 10 200; fi", null, XrayContainer);
+        ExecContainer($"mkdir -p /dev/net {XrayDir}; if [ ! -c /dev/net/tun ]; then mknod /dev/net/tun c 10 200; fi", null, XrayContainer);
 
-        Step("Ключи Reality");
-        WriteContainerFile("/opt/amnezia/xray_configure.sh", ScriptLibrary.Load("xray_configure.sh"), "755", XrayContainer);
-        var conf = ExecContainer("bash /opt/amnezia/xray_configure.sh", TimeSpan.FromMinutes(1), XrayContainer);
-        if (conf.Output.Contains("keygen=failed"))
-            throw new MayakException("Xray не смог создать ключи Reality:\n" + SshConnection.Tail(conf.Combined));
-
-        var priv = ReadContainerFile(XrayDir + "/xray_private.key", XrayContainer)?.Trim();
-        var pub = ReadContainerFile(XrayDir + "/xray_public.key", XrayContainer)?.Trim();
-        var sid = ReadContainerFile(XrayDir + "/xray_short_id.key", XrayContainer)?.Trim();
-        var owner = ReadContainerFile(XrayDir + "/xray_uuid.key", XrayContainer)?.Trim();
-        if (string.IsNullOrEmpty(priv) || string.IsNullOrEmpty(pub) || string.IsNullOrEmpty(sid))
-            throw new MayakException("Ключи Reality не созданы.");
-
-        var ep = new XrayEndpoint
+        XrayEndpoint ep;
+        string priv;
+        string? owner;
+        if (opt.SharedIdentity != null)
         {
-            Port = opt.Port,
-            PublicKey = pub,
-            ShortId = sid,
-            Sni = opt.Sni.Trim(),
-            Transport = "xhttp",
-            XhttpPath = XrayConfig.RandomPath(),
-            XhttpHost = opt.Sni.Trim(),
-            XhttpMode = "auto",
-        };
+            Step("Применение общей кластерной identity Xray");
+            ep = opt.SharedIdentity;
+            priv = opt.SharedPrivateKey!;
+            owner = null;
+            WriteContainerFile(XrayDir + "/xray_private.key", priv + "\n", "600", XrayContainer);
+            WriteContainerFile(XrayDir + "/xray_public.key", ep.PublicKey + "\n", "644", XrayContainer);
+            WriteContainerFile(XrayDir + "/xray_short_id.key", ep.ShortId + "\n", "644", XrayContainer);
+        }
+        else
+        {
+            Step("Ключи Reality");
+            WriteContainerFile("/opt/amnezia/xray_configure.sh", ScriptLibrary.Load("xray_configure.sh"), "755", XrayContainer);
+            var conf = ExecContainer("bash /opt/amnezia/xray_configure.sh", TimeSpan.FromMinutes(1), XrayContainer);
+            if (conf.Output.Contains("keygen=failed"))
+                throw new MayakException("Xray не смог создать ключи Reality:\n" + SshConnection.Tail(conf.Combined));
+
+            priv = ReadContainerFile(XrayDir + "/xray_private.key", XrayContainer)?.Trim() ?? "";
+            var pub = ReadContainerFile(XrayDir + "/xray_public.key", XrayContainer)?.Trim() ?? "";
+            var sid = ReadContainerFile(XrayDir + "/xray_short_id.key", XrayContainer)?.Trim() ?? "";
+            owner = ReadContainerFile(XrayDir + "/xray_uuid.key", XrayContainer)?.Trim();
+            if (string.IsNullOrEmpty(priv) || string.IsNullOrEmpty(pub) || string.IsNullOrEmpty(sid))
+                throw new MayakException("Ключи Reality не созданы.");
+
+            ep = new XrayEndpoint
+            {
+                Port = opt.Port,
+                PublicKey = pub,
+                ShortId = sid,
+                Sni = opt.Sni.Trim(),
+                Transport = "xhttp",
+                XhttpPath = XrayConfig.RandomPath(),
+                XhttpHost = opt.Sni.Trim(),
+                XhttpMode = "auto",
+            };
+        }
         snap.Xray = ep;
         EnsureXrayIds(snap.Db);
 

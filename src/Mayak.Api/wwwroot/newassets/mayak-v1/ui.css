@@ -1,0 +1,165 @@
+@font-face{font-family:Onest;src:url('/newassets/mayak-v1/Onest.ttf') format('truetype');font-style:normal;font-weight:100 900;font-display:swap}
+@font-face{font-family:JetBrains Mono;src:url('/newassets/mayak-v1/JetBrainsMono-Regular.ttf') format('truetype');font-style:normal;font-weight:400;font-display:swap}
+:root{color-scheme:dark;--surface-0:#0a0f1c;--surface-1:#111827;--surface-2:#18213a;--surface-3:#222d4a;--line:#253150;--line-strong:#5a6890;--ink:#eceff6;--ink-muted:#9ca6be;--ink-faint:#5e6880;--beam:#ffc54d;--beam-strong:#ffd88a;--beam-soft:rgba(255,197,77,.14);--on-beam:#1b1405;--focus:#8db4f0;--page:var(--surface-0);--card:var(--surface-1);--soft:var(--surface-2);--text:var(--ink);--muted:var(--ink-muted);--navy:#111827;--navy2:#18213a;--amber:var(--beam);--amber-d:var(--beam-strong);--green:#52d6a2;--red:#ff7b7b;--orange:#f7a35e;color-scheme:dark}
+:root[data-theme="day"]{color-scheme:light;--surface-0:#f5f3ee;--surface-1:#fff;--surface-2:#ece9e2;--surface-3:#e2ded5;--line:#dcd7cc;--line-strong:#8f887a;--ink:#131826;--ink-muted:#565e70;--ink-faint:#9a9fab;--beam:#f2b12e;--beam-strong:#8a5b00;--beam-soft:rgba(242,177,46,.18);--on-beam:#1b1405;--focus:#2b5ea6;--page:var(--surface-0);--card:var(--surface-1);--soft:var(--surface-2);--text:var(--ink);--muted:var(--ink-muted);--navy:#fff;--navy2:#ece9e2;--amber:var(--beam);--amber-d:var(--beam-strong);--green:#116b4a;--red:#be3a30;--orange:#94500c}
+@media(prefers-color-scheme:light){:root:not([data-theme="night"]):not([data-theme="day"]){color-scheme:light;--surface-0:#f5f3ee;--surface-1:#fff;--surface-2:#ece9e2;--surface-3:#e2ded5;--line:#dcd7cc;--line-strong:#8f887a;--ink:#131826;--ink-muted:#565e70;--ink-faint:#9a9fab;--beam:#f2b12e;--beam-strong:#8a5b00;--on-beam:#1b1405;--focus:#2b5ea6;--page:var(--surface-0);--card:var(--surface-1);--soft:var(--surface-2);--text:var(--ink);--muted:var(--ink-muted);--navy:#fff;--navy2:#ece9e2;--amber:var(--beam);--amber-d:var(--beam-strong);--green:#116b4a;--red:#be3a30;--orange:#94500c}}
+html{min-width:0;-webkit-text-size-adjust:100%;text-size-adjust:100%;scroll-padding-top:16px}
+body{font-family:Onest,"Segoe UI",system-ui,sans-serif!important;color:var(--text)!important;background:var(--page)!important;min-width:0}
+code,pre,.key{font-family:"JetBrains Mono",Consolas,ui-monospace,monospace!important}
+:focus-visible{outline:3px solid var(--focus)!important;outline-offset:2px!important}
+button,input,select,textarea,.btn,.link,summary{font-family:inherit}
+button,input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea{min-height:44px}
+input[type=checkbox],input[type=radio]{width:20px!important;height:20px;min-height:20px;accent-color:var(--beam-strong)}
+button.b,a.b{min-height:44px;display:inline-flex;align-items:center;justify-content:center;padding:9px 14px;border-radius:10px}
+.btn,.link,button,[role=button]{touch-action:manipulation}
+.card,.provision-box{border-radius:16px!important}
+.muted,.auth-help,.fine{color:var(--muted)!important}
+.err,.provision-error{color:var(--red)!important}
+[hidden]{display:none!important}
+body.landing-page .downloads .fine,body.landing-page .downloads .fine a{color:#c0c8d9!important}
+body.portal-page header{background:#111827!important;color:#eceff6!important;border-bottom:1px solid #253150}
+body.portal-page header .in{gap:12px;min-height:44px}
+body.portal-page header .brand{gap:11px;min-height:44px;letter-spacing:.01em}
+body.portal-page header .brand img{width:34px;height:34px;display:block;flex:none;border-radius:50%;margin:0}
+body.portal-page header .who{color:#c0c8d9!important;min-width:0;flex-wrap:wrap}
+body.portal-page header .who a{color:#ffd88a;min-height:44px}
+body.portal-page .muted a,body.portal-page .steps a{min-height:44px;max-width:100%;display:inline-flex;align-items:center;white-space:normal;overflow-wrap:anywhere}
+body.portal-page h1,body.portal-page h2,body.portal-page p,body.portal-page li{overflow-wrap:anywhere}
+body.portal-page main{padding-top:22px}
+body.portal-page .card{box-shadow:0 8px 24px rgba(0,0,0,.06)}
+body.portal-page .btn.p{background:var(--beam);border-color:var(--beam-strong);color:var(--on-beam)}
+body.portal-page .btn.s{min-height:44px}
+body.portal-page .auth-tabs button[aria-pressed="true"],body.portal-page .tabs button.on{background:var(--beam);border-color:var(--beam-strong);color:var(--on-beam)}
+body.portal-page .auth-form input,body.portal-page select{background:var(--card);color:var(--text);border-color:var(--line-strong)}
+body.portal-page input::placeholder{color:var(--muted);opacity:1}
+body.admin-page header{background:#111827!important;color:#eceff6!important;border-bottom:1px solid #253150;min-height:60px;padding:10px 20px}
+body.admin-page header b{display:inline-flex;align-items:center;gap:10px;font-size:17px;letter-spacing:.01em}
+body.admin-page header b::before{content:"";display:block;width:34px;height:34px;flex:none;border-radius:50%;background:center/cover no-repeat url('/newassets/mayak-v1/mayak-f7-on.svg')}
+body.admin-page header .muted{color:#c0c8d9!important;font-size:14px}
+body.admin-page header .who{color:#c0c8d9!important;min-width:0;overflow-wrap:anywhere}
+body.admin-page header .who a{min-height:44px;display:inline-flex;align-items:center}
+body.admin-page nav{min-height:48px;gap:8px;padding:4px max(16px,calc((100vw - 1120px)/2));background:var(--card);border-color:var(--line);scrollbar-width:thin}
+@media(min-width:761px){body.admin-page nav:not([hidden]){position:fixed;z-index:20;left:0;top:60px;bottom:0;width:232px;display:flex;flex-direction:column;align-items:stretch;gap:8px;padding:18px 12px;overflow-x:hidden;overflow-y:auto;border-right:1px solid var(--line);border-bottom:0}body.admin-page nav button{width:100%;min-height:48px;display:flex;align-items:center;text-align:left;justify-content:flex-start;border:0;border-radius:10px;padding-inline:14px}body.admin-page nav button.on{background:var(--beam-soft);color:var(--ink);border:0}body.admin-page main{margin:0 20px 0 252px;max-width:1280px}}
+body.admin-page nav button{min-height:44px;padding:8px 14px;border-radius:10px 10px 0 0;color:var(--muted);display:flex;align-items:center}
+body.admin-page nav button.on{color:var(--ink);border-color:var(--beam);font-weight:700}
+body.admin-page main{max-width:1120px;padding:22px 20px 48px}
+body.admin-page .card{box-shadow:0 8px 24px rgba(0,0,0,.06)}
+body.admin-page .chip{font-size:12px;color:var(--muted)}
+body.admin-page button.b,body.admin-page a.b{background:var(--card);color:var(--ink);border-color:var(--line-strong)}
+body.admin-page button.p{background:var(--beam);border-color:var(--beam-strong);color:var(--on-beam)}
+body.admin-page button.d{color:var(--red)}
+body.admin-page input,body.admin-page select,body.admin-page textarea{color:var(--ink);background:var(--card);border-color:var(--line-strong);border-radius:9px}
+body.admin-page input[type=checkbox]{width:20px!important;vertical-align:middle}
+body.admin-page table{color:var(--ink)}
+body.admin-page th{color:var(--muted)}
+body.admin-page pre{color:var(--ink);background:var(--surface-2);border-color:var(--line)}
+body.admin-page #toast{background:#111827;color:#eceff6;border:1px solid #5a6890}
+@media(max-width:760px){body.admin-page header{flex-wrap:wrap}body.admin-page header .who{flex:0 0 100%;margin-left:0;max-width:100%;overflow-wrap:anywhere}body.admin-page header .muted{flex:0 1 auto}body.portal-page main{padding:18px 14px 38px}body.admin-page header{padding-inline:14px}body.admin-page main{padding:16px 14px 38px}body.admin-page .grid2{grid-template-columns:minmax(0,1fr)}body.admin-page nav{padding-inline:8px}}
+@media(max-width:600px){button,input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea,.btn,.link,body.admin-page nav button{min-height:48px}body.portal-page header{padding-inline:12px}body.portal-page header .in{flex-wrap:wrap}body.portal-page header .who{margin-left:auto;max-width:100%;overflow-wrap:anywhere}body.portal-page main{padding-inline:12px}body.portal-page .card{padding:16px!important}body.admin-page header .who{font-size:12px}body.admin-page header .who a{min-height:48px}body.admin-page table{display:block;max-width:100%;overflow-x:auto}body.admin-page .list>div{flex-wrap:wrap;min-width:0}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto!important}*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
+
+/* V2 appearance-only theme control and wordmark */
+.wordmark{font-family:Onest,"Segoe UI",system-ui,sans-serif;font-weight:600;letter-spacing:-.02em;text-transform:lowercase}
+.theme-toggle{min-width:44px;min-height:44px;padding:8px 12px;border:1px solid #5a6890;border-radius:10px;background:#111827;color:#eceff6;font:600 14px/1 Onest,"Segoe UI",system-ui,sans-serif;cursor:pointer;touch-action:manipulation}
+.theme-toggle:hover{border-color:#ffc54d}
+.theme-toggle:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+body.portal-page header .in{flex-wrap:wrap}
+body.portal-page header .brand{font-weight:600}
+body.admin-page header{flex-wrap:wrap}
+body.admin-page header .brand{display:flex;align-items:center;gap:10px;min-height:44px;margin-right:2px;font-size:17px}
+body.admin-page header .brand img{width:34px;height:34px;display:block;border-radius:50%}
+body.admin-page header .who{margin-left:auto;min-width:0;overflow-wrap:anywhere}
+@media(max-width:420px){body.admin-page header{gap:6px;padding-inline:10px}body.admin-page header .who{flex:1 1 100%;margin-left:0}body.portal-page header .who{flex:1 1 100%;margin-left:0}}
+
+/* Typography roles from the primary system: body 16/1.5, secondary 14, labels 15/600. */
+body.portal-page,body.admin-page{font-size:16px!important;line-height:1.5!important}
+body.portal-page .muted,body.portal-page .auth-help,body.portal-page .fine,body.portal-page .err,body.portal-page .provision-error,body.portal-page .who,body.admin-page .muted,body.admin-page .err,body.admin-page .provision-error,body.admin-page .chip,body.admin-page .who,body.admin-page th,body.admin-page td,body.admin-page small{font-size:14px!important;line-height:1.5!important}
+body.portal-page label,body.admin-page label{font-size:15px!important;font-weight:600!important;line-height:1.5!important}
+body.admin-page header .muted,body.admin-page header .who{font-size:14px!important;line-height:1.5!important}
+body.landing-page .disclaimer,body.landing-page .platform span,body.landing-page .fine,body.landing-page .foot{font-size:14px!important;line-height:1.5!important}
+
+body.landing-page{font-size:16px!important;line-height:1.5!important}
+
+body.portal-page code,body.portal-page pre,body.portal-page .key,body.admin-page code,body.admin-page pre,body.admin-page .key{font-size:13px!important;line-height:1.5!important}
+
+body.landing-page .nav a{font-size:14px!important}
+
+body.portal-page button{font-size:14px!important;line-height:1.5!important}
+
+body.portal-page .note,body.portal-page .btn.s{font-size:14px!important;line-height:1.5!important}
+
+/* Replace only the legacy decorative auth glyph; the renderer/inline script stays untouched. */
+body.portal-page .auth-card>svg:first-child{display:none!important}
+body.portal-page .auth-card::before{content:'';display:inline-block;vertical-align:baseline;width:56px;height:56px;margin:0 0 8px;background:url('/newassets/mayak-v1/mayak-f7-on.svg') center/contain no-repeat}
+
+/* 5.1.0.20: selected tab is neutral; amber stays for the main action only (light budget). */
+body.portal-page .auth-tabs button[aria-pressed="true"],body.portal-page .tabs button.on{background:var(--surface-3);border-color:var(--ink);color:var(--ink)}
+
+/* 5.1.0.20: day theme has a light header too (site, cabinet, admin, privacy). */
+:root[data-theme="day"] body.portal-page header,:root[data-theme="day"] body.admin-page header,:root[data-theme="day"] .top{background:var(--surface-1)!important;color:var(--ink)!important;border-bottom:1px solid var(--line)!important}
+:root[data-theme="day"] body.portal-page header .who,:root[data-theme="day"] body.admin-page header .who,:root[data-theme="day"] body.admin-page header .muted{color:var(--ink-muted)!important}
+:root[data-theme="day"] body.portal-page header .who a{color:var(--beam-strong)}
+:root[data-theme="day"] .top .nav a:hover{background:var(--surface-2)}
+:root[data-theme="day"] .top .nav .portal{border-color:var(--line-strong)}
+:root[data-theme="day"] .theme-toggle{background:var(--surface-1);color:var(--ink);border-color:var(--line-strong)}
+:root[data-theme="day"] .theme-toggle:hover{border-color:var(--ink)}
+
+/* 5.1.0.21 admin readability: centred content column, calmer hierarchy, readable tables (admin only). */
+body.admin-page main>*{max-width:1040px;margin-inline:auto}
+@media(min-width:761px){body.admin-page main{margin:0 0 0 232px;max-width:none;padding:32px clamp(20px,4vw,48px) 56px}}
+body.admin-page .card{padding:22px 24px!important;margin-bottom:16px;border-color:var(--line)}
+body.admin-page h2{font-size:20px;font-weight:650;letter-spacing:-.01em;line-height:1.3;margin:0 0 14px}
+body.admin-page h3{font-size:16px!important;font-weight:650}
+body.admin-page .row{gap:10px}
+body.admin-page .row>h2{margin:0}
+body.admin-page p{max-width:75ch}
+body.admin-page .grid2{gap:4px 20px}
+body.admin-page label{font-size:14px!important;margin:14px 0 6px;color:var(--ink-muted)}
+body.admin-page .grid2 input,body.admin-page .grid2 select{width:100%}
+body.admin-page .grid2 .row>input{flex:1 1 0;min-width:0}
+body.admin-page .stats{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;text-align:center;padding:18px!important}
+body.admin-page .stats>div{padding:10px 8px;border-radius:12px;background:var(--surface-2)}
+body.admin-page .stats div b{font-size:30px;font-weight:700;line-height:1.15;font-variant-numeric:tabular-nums;color:var(--ink)}
+body.admin-page .list{margin-top:12px!important;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+body.admin-page .list>div{padding:14px 16px;gap:14px;border-top:1px solid var(--line);transition:background-color .15s ease}
+body.admin-page .list>div:first-child{border-top:0}
+body.admin-page .list>div:hover{background:var(--beam-soft)}
+body.admin-page .list>div b{font-size:16px;font-weight:600}
+body.admin-page .list>p.muted{padding:14px 16px;margin:0}
+body.admin-page .dot{width:10px;height:10px;box-shadow:0 0 0 3px var(--surface-2)}
+body.admin-page .chip{padding:2px 10px;border-radius:999px;background:var(--surface-2);border:1px solid var(--line);white-space:nowrap}
+body.admin-page .chip.wait{color:var(--orange);border-color:currentColor;background:transparent}
+body.admin-page table{border-collapse:separate;border-spacing:0;border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-top:12px}
+body.admin-page th{font-size:13px!important;font-weight:600;text-transform:uppercase;letter-spacing:.04em;background:var(--surface-2);padding:10px 12px}
+body.admin-page td{padding:12px;vertical-align:middle;border-top:1px solid var(--line)}
+body.admin-page tr:hover td{background:var(--beam-soft)}
+body.admin-page td.row{flex-wrap:nowrap;justify-content:flex-end;gap:6px}
+body.admin-page td.row button.b{min-height:40px;padding:6px 12px}
+body.admin-page pre{border-radius:10px;padding:12px 14px}
+body.admin-page #toast{border-radius:10px;padding:12px 18px;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+body.admin-page .login{text-align:center;margin:10vh auto}
+body.admin-page .login p{margin-inline:auto}
+@media(max-width:760px){body.admin-page table{display:block;max-width:100%;overflow-x:auto}body.admin-page .card{padding:18px 16px!important}body.admin-page .stats{grid-template-columns:repeat(2,minmax(0,1fr))}body.admin-page h2{font-size:18px}}
+@media(prefers-reduced-motion:reduce){body.admin-page .list>div{transition:none}}
+/* 5.1.0.21 admin: server reachability from Moscow (chips in the list, 24 h bars in the detail). */
+body.admin-page .probes{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+body.admin-page .probe{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:999px;border:1px solid var(--line);background:var(--surface-2);font-size:13px!important;line-height:1.6;color:var(--ink);white-space:nowrap}
+body.admin-page .probe i{width:8px;height:8px;border-radius:50%;background:var(--ink-faint);flex:none}
+body.admin-page .probe.ok i{background:var(--green)}
+body.admin-page .probe.warn i{background:var(--orange)}
+body.admin-page .probe.bad{border-color:var(--red);color:var(--red)}
+body.admin-page .probe.bad i{background:var(--red)}
+body.admin-page .probe.na{color:var(--muted)}
+body.admin-page .probe-title{margin:20px 0 10px}
+body.admin-page .probe-history{display:grid;gap:12px}
+body.admin-page .probe-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:6px}
+body.admin-page .probe-bar{display:grid;grid-template-columns:repeat(48,minmax(0,1fr));gap:2px;height:22px}
+body.admin-page .probe-bar span{border-radius:3px;background:var(--surface-3)}
+body.admin-page .probe-bar span.ok{background:var(--green)}
+body.admin-page .probe-bar span.warn{background:var(--orange)}
+body.admin-page .probe-bar span.bad{background:var(--red)}
+@media(max-width:600px){body.admin-page .probe-bar{gap:1px;height:18px}}
+@media(min-width:761px){body.admin-page header{position:sticky;top:0;z-index:30;height:60px;flex-wrap:nowrap}}
+body.admin-page .provision-warn{margin:8px 0 12px;padding:12px 14px;border:1px solid var(--orange);border-radius:10px;color:var(--ink);background:rgba(247,163,94,.1);font-size:14px!important;line-height:1.5}
+body.admin-page .probe-at{font-size:13px!important;align-self:center;margin-right:2px}body.admin-page .probe-title{align-items:center}body.admin-page .probe-title h3{margin:0}
+body.admin-page .blank-provision{margin-inline:auto}

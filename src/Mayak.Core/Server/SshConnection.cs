@@ -60,6 +60,8 @@ public interface IShell : IDisposable
 public sealed class SshConnection : IShell
 {
     private readonly SshCredentials _creds;
+    private readonly bool _cleanupStaleFiles;
+    private readonly TimeSpan _sftpOperationTimeout;
     private SshClient? _ssh;
     private SftpClient? _sftp;
     private SshClient? _jump;
@@ -78,12 +80,38 @@ public sealed class SshConnection : IShell
     public string Sudo { get; private set; } = "";
 
     public bool IsRoot { get; private set; }
+    public TimeSpan SftpOperationTimeout => _sftpOperationTimeout;
 
-    public SshConnection(SshCredentials creds)
+    public SshConnection(SshCredentials creds, bool cleanupStaleFiles = true, TimeSpan? sftpOperationTimeout = null)
     {
         _creds = creds;
+        _cleanupStaleFiles = cleanupStaleFiles;
+        _sftpOperationTimeout = sftpOperationTimeout ?? Timeout.InfiniteTimeSpan;
         _connectHost = creds.Host;
         _connectPort = creds.Port;
+    }
+
+    /// <summary>Reads the SSH host key using the SSH "none" authentication method; no user credential is sent.</summary>
+    public static string ReadHostKeyFingerprint(string host, int port, TimeSpan? timeout = null)
+    {
+        var method = new NoneAuthenticationMethod("mayak-host-key-probe");
+        var info = new ConnectionInfo(host, port, "mayak-host-key-probe", method)
+        {
+            Timeout = timeout ?? TimeSpan.FromSeconds(8),
+            Encoding = Encoding.UTF8,
+        };
+        using var ssh = new SshClient(info);
+        string? fingerprint = null;
+        ssh.HostKeyReceived += (_, e) =>
+        {
+            fingerprint = Fingerprint(e.HostKey);
+            e.CanTrust = true;
+        };
+        try { ssh.Connect(); }
+        catch (SshAuthenticationException) { /* Host key exchange completes before none-auth is rejected. */ }
+        catch (SshConnectionException) when (fingerprint != null) { /* Host key was received; the probe need not authenticate. */ }
+        finally { if (ssh.IsConnected) ssh.Disconnect(); }
+        return fingerprint ?? throw new MayakException("Не удалось получить SSH-отпечаток сервера.");
     }
 
     public void Connect()
@@ -133,8 +161,9 @@ public sealed class SshConnection : IShell
                 throw new MayakException($"Пользователь «{who}» не может выполнять sudo без пароля. Подключайтесь под root или добавьте в sudoers строку «{who} ALL=(ALL) NOPASSWD:ALL».");
         }
 
-        // Убираем временные файлы, оставшиеся от прерванных операций
-        Run("find ~ -maxdepth 1 -name '.mayak_*' -type f -mmin +30 -delete 2>/dev/null; find ~/.mayak_tmp -type f -mmin +30 -delete 2>/dev/null; true", TimeSpan.FromSeconds(20));
+        // Existing interactive clients clean stale temp files by default. Provisioning and probes opt out.
+        if (_cleanupStaleFiles)
+            Run("find ~ -maxdepth 1 -name '.mayak_*' -type f -mmin +30 -delete 2>/dev/null; find ~/.mayak_tmp -type f -mmin +30 -delete 2>/dev/null; true", TimeSpan.FromSeconds(20));
     }
 
     private bool _hostKeyMismatch;
@@ -278,6 +307,7 @@ public sealed class SshConnection : IShell
             if (_sftp is { IsConnected: true }) return _sftp;
             _sftp?.Dispose();
             _sftp = new SftpClient(CreateConnectionInfo(_creds, _connectHost, _connectPort));
+            _sftp.OperationTimeout = _sftpOperationTimeout;
             _sftp.HostKeyReceived += (_, e) => e.CanTrust = Fingerprint(e.HostKey) == ServerFingerprint;
             _sftp.Connect();
             return _sftp;
@@ -349,5 +379,14 @@ public sealed class SshConnection : IShell
         try { _forward?.Stop(); } catch { /* ignore */ }
         try { _jump?.Disconnect(); } catch { /* ignore */ }
         _jump?.Dispose();
+    }
+
+    /// <summary>Interrupt in-flight SSH/SFTP work when an owning bounded operation is cancelled.</summary>
+    public void Cancel()
+    {
+        try { _sftp?.Disconnect(); } catch { /* cancellation is best-effort; finite operation timeout remains active */ }
+        try { _ssh?.Disconnect(); } catch { /* cancellation is best-effort; command timeout remains active */ }
+        try { _forward?.Stop(); } catch { }
+        try { _jump?.Disconnect(); } catch { }
     }
 }

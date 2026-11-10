@@ -1,5 +1,35 @@
 # Маяк VPN
 
+## Native shared-AWG admission DTO (TODAY-ADMISSION01)
+
+All requests and responses below use the existing encrypted `/gw/v1/{method}` envelope. The request JSON contains the usual `auth_data: {"api_key":"..."}`. The gateway decrypts it and encrypts the JSON response as before. Legacy errors remain `{ "http_status": number, "message": string }`; admission errors add optional `code` and `retry_after_ms` without removing those fields.
+
+An opt-in AWG config request adds `"mayak_auto_connect": 1` alongside the existing gateway config fields, including `installation_uuid` and `public_key`. A successful response keeps the existing `config` field (a `VpnKeyCodec` encoded AWG configuration) and `service_info`, and adds:
+
+With no candidate, the encrypted error retains `http_status` and `message`, and adds `code: "no_ready_exit"`. If an installed candidate is awaiting its current peer/revision acknowledgement, it returns `code: "provisioning"` and `retry_after_ms: 1500`.
+
+```json
+{
+  "mayak_connection": {
+    "schema": 1,
+    "revision": 42,
+    "expires_at": "2026-10-30T12:00:00Z",
+    "candidates": [
+      { "id": "<server-guid>", "host": "81.29.149.103", "port": 51820, "preferred": true, "expected_egress_ips": ["81.29.149.103"] }
+    ]
+  }
+}
+```
+
+`POST /gw/v1/admission` accepts the same encrypted envelope. Common request fields are `auth_data`, `installation_uuid`, `public_key`, `action`, and `attempt_id` (16–128 ASCII letters, digits, `_` or `-`). Actions are:
+
+- `acquire`: add `candidate_id` (server GUID). Success is `{ "allocation_id":"<guid>", "connect_before":"<UTC>", "config_revision":42, "config":"<VpnKeyCodec encoded AWG config>" }`. The decoded AWG config clones the shared AWG parameters and substitutes only the selected candidate host; client key placeholders and device identity are unchanged.
+- Repeating `acquire` with the same `attempt_id` and candidate is idempotent only while that candidate remains enabled and current-ready. A retry cannot rebind its attempt to another candidate.
+- `proven` / `release`: add `allocation_id` and use the original `attempt_id`. They return `{ "proven":true }` or `{ "released":true }` for this device's allocation, and the same field set to `false` for an owner-scoped missing allocation. A foreign allocation is never returned or modified.
+- `reconcile`: requests release of only this device's allocation for the supplied `attempt_id`, after its own backend has stopped. The client must retain the attempt ID across a lost response/restart cleanup. A delayed reconcile for an older attempt cannot release a newer one. Success is `{ "reconciled":true }`.
+
+Admission errors are encrypted JSON with the existing `http_status` and `message`, plus `code` (`FULL`, `NOT_READY`, `DISABLED`, `REVOKED`, `ACCOUNT_EXPIRED`, or `INVALID_REQUEST`) and optional `retry_after_ms`. The candidate list is a bounded shared-AWG readiness/admission list; it is not a VLESS pool or a measured CPU/bandwidth guarantee.
+
 Собственный VPN-сервис на базе **AmneziaWG** и программа-администратор для Windows.
 
 - **Пользователи подключаются** обычными приложениями: AmneziaVPN (файл `.vpn` или ключ `vpn://`) на Windows и Android, AmneziaWG (файл `.conf`) на iPhone и Mac.

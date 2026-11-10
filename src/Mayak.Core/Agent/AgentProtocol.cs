@@ -55,10 +55,54 @@ public sealed class AgentState
     public int DefaultDownMbps { get; set; }
     public int DefaultUpMbps { get; set; }
     public List<AgentAccount> Accounts { get; set; } = new();
+    /// <summary>Endpoint-level VLESS desired state, sent even when there are no assigned devices.</summary>
+    public AgentPoolEndpoint? PoolEndpoint { get; set; }
+    /// <summary>Per-device credentials assigned to this endpoint.</summary>
+    public List<AgentPoolDevice> PoolDevices { get; set; } = new();
     /// <summary>Для входа: куда пересылать трафик. null — пересылка выключена.</summary>
     public AgentRelay? Relay { get; set; }
     /// <summary>Как часто приходить за состоянием, секунд.</summary>
     public int PollSeconds { get; set; } = 30;
+}
+
+public sealed class AgentPoolEndpoint
+{
+    public Guid EndpointId { get; set; }
+    public long IdentityVersion { get; set; }
+    public long DesiredCredentialsRevision { get; set; }
+    public string Host { get; set; } = "";
+    public int Port { get; set; }
+    public string PublicKey { get; set; } = "";
+    public string Sni { get; set; } = "";
+    public string ShortId { get; set; } = "";
+    public string Flow { get; set; } = "";
+    public string Transport { get; set; } = "";
+    public string Fingerprint { get; set; } = "chrome";
+    public string XhttpPath { get; set; } = "/";
+    public string XhttpHost { get; set; } = "";
+    public string XhttpMode { get; set; } = "auto";
+    public bool AllowNewConnections { get; set; }
+    public int CapacitySlots { get; set; }
+}
+
+public sealed class AgentPoolDevice
+{
+    public Guid DeviceId { get; set; }
+    public bool Enabled { get; set; }
+    public string XrayId { get; set; } = "";
+    public long CredentialsRevision { get; set; }
+    public Guid EndpointId { get; set; }
+    public string Host { get; set; } = "";
+    public int Port { get; set; }
+    public string PublicKey { get; set; } = "";
+    public string Sni { get; set; } = "";
+    public string ShortId { get; set; } = "";
+    public string Flow { get; set; } = "";
+    public string Transport { get; set; } = "";
+    public string Fingerprint { get; set; } = "chrome";
+    public string XhttpPath { get; set; } = "/";
+    public string XhttpHost { get; set; } = "";
+    public string XhttpMode { get; set; } = "auto";
 }
 
 public sealed class AgentAccount
@@ -101,6 +145,23 @@ public sealed class AgentReport
     /// <summary>Агент в пробном режиме: показывает, что изменил бы, но сервер не трогает.</summary>
     public bool DryRun { get; set; }
     public DateTime? At { get; set; }
+    /// <summary>Protocol-specific evidence. API receipt time is authoritative.</summary>
+    public string? Protocol { get; set; }
+    public long IdentityVersion { get; set; }
+    public long CredentialsRevision { get; set; }
+    public bool RuntimeReady { get; set; }
+    public bool ConfigValid { get; set; }
+    public bool SelfTestPassed { get; set; }
+    /// <summary>Agent proof for provisioned exits: running AWG/Xray services, parsable config, and successful post-apply reread.</summary>
+    public ProvisioningRuntimeProof? ProvisioningProof { get; set; }
+}
+
+public sealed class ProvisioningRuntimeProof
+{
+    public bool AwgRunning { get; set; }
+    public bool XrayRunning { get; set; }
+    public bool ConfigurationLoaded { get; set; }
+    public bool PostApplyCheckPassed { get; set; }
 }
 
 public sealed class AgentPeerStats

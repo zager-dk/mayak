@@ -6,6 +6,7 @@ using Mayak.Api.Endpoints;
 using Mayak.Api.Gateway;
 using Mayak.Api.Services;
 using Mayak.Api.Telegram;
+using Mayak.Api.Provisioning;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 
@@ -15,6 +16,8 @@ using Microsoft.EntityFrameworkCore;
 // Команда обслуживания — только первым аргументом; всё остальное — обычные параметры хоста (--urls, --contentRoot …).
 var command = args.Length > 0 && !args[0].StartsWith("--") ? args : Array.Empty<string>();
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions { Args = command.Length > 0 ? Array.Empty<string>() : args });
+// Hosting.Diagnostics logs Request.Path verbatim, which would expose the capability token in /sub/{token}.
+builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.None);
 builder.Configuration.AddJsonFile("/etc/mayak/api.json", optional: true, reloadOnChange: false);
 builder.Configuration.AddEnvironmentVariables("MAYAK_");
 
@@ -31,11 +34,17 @@ tgOptions.PublicUrl ??= publicUrl;
 
 builder.Services.AddDbContext<MayakDb>(o => o.UseNpgsql(connectionString));
 builder.Services.AddScoped<ClusterService>();
+builder.Services.AddScoped<DeviceAccessService>();
+builder.Services.AddSingleton<IProvisioningBackend, SshProvisioningBackend>();
+builder.Services.AddSingleton<ProvisioningCoordinator>();
 builder.Services.AddSingleton(tgOptions);
 // Ключ шлюза для приложения Маяк; создаёт установщик (openssl), без него шлюз выключен.
 builder.Services.AddSingleton(new GatewayKeys(cfg["Gateway:PrivateKeyPath"] ?? "/etc/mayak/gateway.pem"));
 builder.Services.AddSingleton<TelegramClient>();
 if (cfg.GetValue("Telegram:Polling", true)) builder.Services.AddHostedService<TelegramBotService>();
+// Проверка доступности серверов с машины API (этап A, PROBES_PLAN.md): по кнопке в админке.
+// Фоновые проверки раз в минуту — только при Probes:Background=true (по умолчанию выключены).
+if (cfg.GetValue("Probes:Enabled", true) && cfg.GetValue("Probes:Background", false)) builder.Services.AddHostedService<ServerProbeService>();
 builder.Services.ConfigureHttpJsonOptions(o =>
 {
     o.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
@@ -52,6 +61,10 @@ builder.Services.AddRateLimiter(o =>
     o.AddPolicy("auth", http => RateLimitPartition.GetFixedWindowLimiter(
         http.Connection.RemoteIpAddress?.ToString() ?? "?",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = 30, Window = TimeSpan.FromMinutes(1) }));
+    // Выдача ключа устройства: каждый вызов меняет ключ, пишет аудит и может слать уведомления — не чаще 10 раз в минуту на сеанс.
+    o.AddPolicy("device-key", http => RateLimitPartition.GetFixedWindowLimiter(
+        Tokens.FromRequest(http.Request) is { Length: > 0 } bearer ? Tokens.Hash(bearer) : http.Connection.RemoteIpAddress?.ToString() ?? "?",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = Math.Max(1, cfg.GetValue("Devices:KeyRequestsPerMinute", 10)), Window = TimeSpan.FromMinutes(1) }));
 });
 
 var app = builder.Build();
@@ -60,13 +73,32 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<MayakDb>();
     db.Database.Migrate();
+    var interrupted = new[] { "queued", "preflight", "installing", "installing_awg", "installing_xray", "installing_agent", "awaiting_agent", "syncing" };
+    await db.Servers.Where(s => s.ProvisioningStatus != null && interrupted.Contains(s.ProvisioningStatus))
+        .ExecuteUpdateAsync(u => u.SetProperty(s => s.ProvisioningStatus, "interrupted")
+            .SetProperty(s => s.ProvisioningMessage, "API перезапущен; SSH учётные данные удалены. Повторите проверку и безопасно начните новую установку.")
+            .SetProperty(s => s.ProvisioningUpdatedAt, DateTime.UtcNow));
     if (command.Length > 0) return await Cli.RunAsync(command, db, publicUrl, agentInstallUrl);
 }
 
 app.UseForwardedHeaders();
+app.Use(async (http, next) =>
+{
+    if (http.Request.Path.StartsWithSegments("/api") || http.Request.Path.StartsWithSegments("/gw/v1") || http.Request.Path.StartsWithSegments("/sub"))
+    {
+        http.Response.Headers.CacheControl = "no-store";
+        http.Response.Headers.Pragma = "no-cache";
+    }
+    await next();
+});
 app.UseRateLimiter();
 app.UseDefaultFiles();
-app.UseStaticFiles();
+// Страницы и ресурсы сайта без версий в именах: браузер хранит копию, но перед показом сверяет её с сервером
+// (ETag/Last-Modified, ответ 304), поэтому обновлённая главная и кабинет видны сразу.
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = ctx => ctx.Context.Response.Headers.CacheControl = "no-cache",
+});
 
 app.MapGet("/download/{file}", (string file) =>
 {
@@ -76,7 +108,9 @@ app.MapGet("/download/{file}", (string file) =>
 });
 app.MapGet("/health", () => Results.Ok(new { ok = true, version = typeof(Program).Assembly.GetName().Version?.ToString(3) }));
 AppEndpoints.Map(app);
+EmailAuthEndpoints.Map(app);
 AdminEndpoints.Map(app, publicUrl, agentInstallUrl);
+ProvisioningEndpoints.Map(app, publicUrl);
 AgentEndpoints.Map(app);
 GatewayEndpoints.Map(app);
 

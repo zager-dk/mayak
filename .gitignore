@@ -1,6 +1,11 @@
 bin/
 obj/
 dist/
+/out/
 samples/
 *.user
 .vs/
+.codex/
+*.log
+__pycache__/
+*.pyc

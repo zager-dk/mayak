@@ -1,9 +1,10 @@
 <!doctype html>
-<html lang="ru">
+<html lang="ru" data-theme="night">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
 <meta name="theme-color" content="#0E1A2B">
 <title>Маяк · кабинет</title>
 <style>
@@ -23,7 +24,7 @@
   header .in { max-width: 640px; margin: 0 auto; display: flex; align-items: center; gap: 10px; }
   header .brand { display: flex; align-items: center; gap: 9px; font-weight: 650; font-size: 17px; letter-spacing: .2px; }
   header .who { margin-left: auto; font-size: 13px; color: #B9C5D6; display: flex; gap: 10px; align-items: center; }
-  header .who a { color: var(--amber); text-decoration: none; }
+  header .who a { color: var(--amber); text-decoration: none; min-height: 44px; padding: 0 4px; display: inline-flex; align-items: center; }
   main { max-width: 640px; margin: 0 auto; padding: 16px 16px 48px; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; margin-bottom: 14px; }
   h1 { font-size: 22px; line-height: 1.25; margin: 0 0 8px; }
@@ -38,10 +39,28 @@
   .btn.p { background: var(--amber); border-color: var(--amber-d); color: #1B1405; }
   .btn.tg { background: #2AABEE; border-color: #1E96D1; color: #fff; }
   .btn.w { width: 100%; }
-  .btn.s { padding: 6px 11px; min-height: 34px; font-size: 13.5px; font-weight: 550; }
+  .btn.s { padding: 8px 11px; min-height: 44px; font-size: 13.5px; font-weight: 550; }
   .btn.d { color: var(--red); }
   .btn:disabled { opacity: .5; cursor: default; }
-  .link { background: none; border: 0; padding: 0; font: inherit; color: var(--muted); text-decoration: underline; cursor: pointer; }
+  .btn:hover:not(:disabled), .tabs button:hover { border-color: var(--amber-d); }
+  :focus-visible { outline: 3px solid var(--amber-d); outline-offset: 2px; }
+  .link { min-height: 44px; display: inline-flex; align-items: center; background: none; border: 0; padding: 0 4px; font: inherit; color: var(--muted); text-decoration: underline; cursor: pointer; }
+  .steps a { min-height: 44px; display: inline-flex; align-items: center; }
+  .auth-tabs { justify-content: center; margin: 8px 0 18px; }
+  .auth-tabs button[aria-pressed="true"] { background: var(--navy); border-color: var(--navy); color: #fff; }
+  @media (prefers-color-scheme: dark) { .auth-tabs button[aria-pressed="true"] { background: var(--amber); border-color: var(--amber); color: #1B1405; } }
+  .auth-form { text-align: left; }
+  .auth-field { margin: 0 0 14px; }
+  .auth-field label { display: block; font-weight: 650; margin-bottom: 6px; }
+  .auth-field input { min-height: 48px; }
+  .auth-help { color: var(--muted); font-size: 13px; margin: 6px 0 0; }
+  .auth-password { display: flex; gap: 8px; }
+  .auth-password input { min-width: 0; flex: 1; }
+  .auth-password button { flex: none; min-width: 80px; }
+  .auth-message { margin: 10px 0 0; }
+  .auth-details { text-align: left; margin-top: 16px; }
+  .auth-details summary { min-height: 44px; display: flex; align-items: center; }
+  .auth-secondary-downloads { text-align: left; }
   .hero { text-align: center; padding: 28px 20px; }
   .hero svg { margin-bottom: 8px; }
   .city { background: linear-gradient(160deg, var(--navy) 0%, #213656 100%); color: #fff; border: 0; position: relative; overflow: hidden; }
@@ -61,8 +80,17 @@
   .platforms button { font: inherit; background: var(--card); color: var(--text); border: 1.5px solid var(--line); border-radius: 12px; padding: 14px 10px; cursor: pointer;
                       display: flex; flex-direction: column; align-items: center; gap: 6px; font-weight: 600; }
   .platforms button.on { border-color: var(--amber); background: rgba(245,165,36,.08); }
+  .choices { display: grid; gap: 10px; margin: 12px 0; }
+  .choice { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; font: inherit; color: var(--text); background: var(--card);
+            border: 1.5px solid var(--line); border-radius: 12px; padding: 12px 14px; min-height: 64px; cursor: pointer; text-decoration: none; }
+  .choice:hover { border-color: var(--amber-d); }
+  .choice b { display: block; font-size: 15.5px; }
+  .choice .muted { display: block; font-size: 13px; }
+  .choice.main { border-color: var(--amber); background: rgba(245,165,36,.08); }
+  .qr-big { display: block; width: min(260px, 100%); height: auto; margin: 10px 0; background: #fff; border-radius: 10px; }
+  ol.steps .sub { color: var(--muted); font-size: 13.5px; margin: 4px 0 0; }
   .tabs { display: flex; gap: 6px; margin: 4px 0 14px; flex-wrap: wrap; }
-  .tabs button { font: inherit; font-size: 14px; border: 1px solid var(--line); background: var(--card); color: var(--muted); border-radius: 999px; padding: 6px 13px; cursor: pointer; }
+  .tabs button { font: inherit; font-size: 14px; border: 1px solid var(--line); background: var(--card); color: var(--muted); border-radius: 999px; padding: 8px 13px; min-height: 44px; cursor: pointer; }
   .tabs button.on { background: var(--navy); border-color: var(--navy); color: #fff; }
   @media (prefers-color-scheme: dark) { .tabs button.on { background: var(--amber); border-color: var(--amber); color: #1B1405; } }
   ol.steps { margin: 0; padding: 0; list-style: none; counter-reset: s; }
@@ -81,16 +109,19 @@
            padding: 10px 16px; border-radius: 10px; display: none; z-index: 9; font-size: 14px; box-shadow: 0 6px 20px rgba(0,0,0,.25); }
   .spin { width: 18px; height: 18px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; animation: r 1s linear infinite; }
   @keyframes r { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }
   [hidden] { display: none !important; }
 </style>
+<link rel="icon" type="image/svg+xml" href="/newassets/mayak-v1/mayak-favicon-32.svg">
+<link rel="stylesheet" href="/newassets/mayak-v1/ui.css"><script defer src="/newassets/mayak-v1/theme.js"></script>
 </head>
-<body>
+<body class="portal-page">
 <header><div class="in">
-  <div class="brand"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l2 3h-4l2-3z" fill="#F5A524"/><path d="M9 7h6l1.5 13h-9L9 7z" fill="#fff"/><path d="M9.6 11h4.8M9.2 15h5.6" stroke="#0E1A2B" stroke-width="1.6"/><path d="M4 7.5L8 9M20 7.5L16 9" stroke="#F5A524" stroke-width="1.6" stroke-linecap="round"/><path d="M5 21h14" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/></svg>Маяк</div>
-  <div class="who" id="who"></div>
+  <div class="brand"><img src="/newassets/mayak-v1/mayak-f7-small-on.svg" width="34" height="34" alt="" aria-hidden="true"><span class="wordmark">маяк</span></div>
+  <button type="button" class="theme-toggle" data-theme-toggle aria-label="Тема: ночь. Переключить на день">День</button><div class="who" id="who"></div>
 </div></header>
 <main id="app"><div class="card hero muted">Загрузка…</div></main>
-<div id="toast"></div>
+<div id="toast" role="status" aria-live="polite"></div>
 
 <script>
 "use strict";
@@ -102,6 +133,19 @@ const store = {
   sget(k) { try { return sessionStorage.getItem(k); } catch { return null; } },
   sset(k, v) { try { v == null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch {} },
 };
+// Кнопка «Получить доступ для iPhone или Mac» с главной ведёт сюда с ?access=apple.
+// Намерение живёт в sessionStorage, чтобы пережить вход, регистрацию и возврат из Telegram.
+let wantApple = (() => {
+  const q = new URLSearchParams(location.search);
+  if (q.get("access") === "apple") {
+    store.sset("mayak.intent", "apple");
+    q.delete("access");
+    const rest = q.toString();
+    history.replaceState(null, "", location.pathname + (rest ? "?" + rest : "") + location.hash);
+    return true;
+  }
+  return store.sget("mayak.intent") === "apple";
+})();
 let token = store.get("mayak.token");
 let me = null, state = null, view = { name: "home" };
 
@@ -113,10 +157,15 @@ async function copy(text) {
 async function api(path, opt = {}) {
   const headers = { "Content-Type": "application/json" };
   if (token) headers.Authorization = "Bearer " + token;
-  const res = await fetch(path, { method: opt.method || "GET", headers, body: opt.body ? JSON.stringify(opt.body) : undefined });
-  if (res.status === 401) { token = null; store.set("mayak.token", null); me = null; throw new Error("Нужно войти заново"); }
+  const res = await fetch(path, { method: opt.method || "GET", headers, body: opt.body ? JSON.stringify(opt.body) : undefined, cache: "no-store" });
   const data = res.status === 204 ? null : await res.json().catch(() => null);
-  if (!res.ok) throw new Error(data?.error || `Ошибка ${res.status}`);
+  if (res.status === 401 && token) { token = null; store.set("mayak.token", null); me = null; }
+  if (!res.ok) {
+    const error = new Error(data?.error || data?.status || `Ошибка ${res.status}`);
+    error.status = res.status;
+    error.code = data?.status;
+    throw error;
+  }
   return data;
 }
 function ago(iso) {
@@ -167,6 +216,37 @@ function detectKind() {
 const here = detectKind();
 const isPhone = here === "IPhone" || here === "Android";
 
+// Подробные шаги для iPhone и Mac: своего приложения Маяка там нет, подключение идёт через AmneziaWG из App Store.
+const storeLink = `<a href="${LINKS.awgApple}" target="_blank" rel="noopener">AmneziaWG в App Store</a>`;
+function iphoneSteps(f, onThis) {
+  const fileBtn = `<button class="btn p" data-act="file">Скачать файл доступа</button>`;
+  const qr = `<img class="qr-big" src="${f.qrConf}" alt="QR-код доступа для AmneziaWG">`;
+  const add = onThis
+    ? `<li><b>Скачайте файл доступа.</b><div style="margin-top:8px">${fileBtn}</div>
+         <p class="sub">Safari спросит, загрузить ли файл: нажмите «Загрузить». Файл ${esc(f.confName)} попадёт в «Файлы» → «Загрузки».</p></li>
+       <li><b>Добавьте файл в AmneziaWG.</b> Откройте AmneziaWG, нажмите «+» и выберите создание туннеля из файла. Найдите в «Загрузках» файл ${esc(f.confName)} и нажмите на него.
+         <p class="sub">Если iPhone сам предложит открыть файл в AmneziaWG, можно согласиться: результат тот же.</p></li>`
+    : `<li><b>Отсканируйте QR-код с iPhone.</b> На iPhone откройте AmneziaWG, нажмите «+», выберите создание туннеля из QR-кода и разрешите доступ к камере. Наведите камеру на этот код:${qr}
+         <p class="sub">Неудобно сканировать? Откройте этот кабинет на самом iPhone, войдите той же почтой и паролем и скачайте файл там.</p></li>`;
+  return `<ol class="steps">
+      <li><b>Установите приложение.</b> На iPhone откройте ${storeLink} и установите его. Нужен iOS 15 или новее.</li>
+      ${add}
+      <li><b>Разрешите VPN.</b> Если AmneziaWG попросит название туннеля, напишите «Маяк». Затем iPhone спросит, разрешить ли добавление конфигураций VPN: нажмите «Разрешить» и подтвердите код-паролем или Face ID.</li>
+      <li><b>Включите Маяк.</b> В AmneziaWG включите переключатель у нового туннеля. Вверху экрана появится значок VPN.</li>
+      <li><b>Проверьте.</b> Откройте в Safari любой сайт. Выключить VPN можно тем же переключателем или в «Настройки» → «VPN».</li></ol>`;
+}
+function macSteps(f, onThis) {
+  const fileBtn = `<button class="btn p" data-act="file">Скачать файл доступа</button>`;
+  return `<ol class="steps">
+      <li><b>Установите приложение.</b> На Mac откройте ${storeLink} и установите его. Нужна macOS 12 или новее.</li>
+      <li><b>Скачайте файл доступа${onThis ? "" : " на Mac"}.</b>${onThis
+          ? `<div style="margin-top:8px">${fileBtn}</div><p class="sub">Файл ${esc(f.confName)} сохранится в папку «Загрузки».</p>`
+          : ` Откройте этот кабинет на самом Mac, войдите той же почтой и паролем, нажмите «Инструкция» у этого устройства и скачайте файл там.<div style="margin-top:8px">${fileBtn}</div><p class="sub">Или скачайте файл здесь и перенесите его на Mac, например через AirDrop.</p>`}</li>
+      <li><b>Добавьте файл в AmneziaWG.</b> Откройте AmneziaWG. Если окна с туннелями не видно, нажмите значок AmneziaWG в строке меню вверху экрана и откройте управление туннелями. Выберите «Импорт туннелей из файла» и укажите ${esc(f.confName)} из «Загрузок».</li>
+      <li><b>Разрешите VPN.</b> macOS спросит, разрешить ли AmneziaWG добавлять конфигурации VPN: нажмите «Разрешить» и при необходимости введите пароль Mac.</li>
+      <li><b>Включите Маяк.</b> Выберите туннель в списке и нажмите «Подключить». Отключить его можно там же или через значок в строке меню.</li></ol>`;
+}
+
 // Варианты подключения для платформы: первый — рекомендуемый.
 function options(kind, f) {
   const fileBtn = `<button class="btn s" data-act="file">Скачать файл ${esc(f.confName)}</button>`;
@@ -183,9 +263,7 @@ function options(kind, f) {
   const onThis = kind === here;
   switch (kind) {
     case "IPhone": return [
-      { id: "awg", title: "AmneziaWG", html: awgSteps(LINKS.awgApple, onThis
-          ? `Нажмите ${fileBtn} и в открывшемся окне выберите «Открыть в AmneziaWG» (или в приложении: «+» → «Импорт из файла»).`
-          : `В AmneziaWG нажмите «+» → «Создать из QR-кода» и наведите камеру:${qrBlock}`) },
+      { id: "awg", title: "AmneziaWG", html: iphoneSteps(f, onThis) },
       { id: "dvpn", title: "DefaultVPN", html: `<ol class="steps">
           <li>Если AmneziaWG нет в App Store — установите <b>DefaultVPN</b>: <a href="${LINKS.defaultVpn}" target="_blank" rel="noopener">App Store</a> (нужен iOS 16+).</li>
           <li>Скопируйте ключ:${keyBlock}</li>
@@ -204,7 +282,7 @@ function options(kind, f) {
       { id: "awg", title: "AmneziaWG", html: awgSteps(LINKS.awgWindows, `Нажмите ${fileBtn}, затем в AmneziaWG: «Импорт туннелей из файла» и «Подключить».`) },
     ];
     case "Mac": return [
-      { id: "awg", title: "AmneziaWG", html: awgSteps(LINKS.awgApple, `Нажмите ${fileBtn}, затем в AmneziaWG: «Импорт туннелей из файла» и «Подключить».`) },
+      { id: "awg", title: "AmneziaWG", html: macSteps(f, onThis) },
       { id: "amn", title: "AmneziaVPN", html: amneziaSteps(`<a href="${LINKS.amneziaSite}" target="_blank" rel="noopener">amnezia.org</a> или <a href="${LINKS.amneziaReleases}" target="_blank" rel="noopener">GitHub</a>`) },
     ];
     default: return [
@@ -215,11 +293,31 @@ function options(kind, f) {
 }
 
 // ───── Вход ─────
-const invite = (() => {
-  const q = new URLSearchParams(location.search).get("invite");
-  if (q) { store.sset("mayak.invite", q); history.replaceState(null, "", location.pathname); }
-  return store.sget("mayak.invite");
+const INVITE_TOKEN = /^[A-Za-z0-9_-]{4,128}$/;
+function parseInvite(value) {
+  const raw = String(value || "").trim();
+  if (INVITE_TOKEN.test(raw)) return raw;
+  try {
+    const url = new URL(raw);
+    const trusted = (url.protocol === "https:" && url.hostname === "mayaklight.ru") || url.origin === location.origin;
+    if (!trusted || !/^\/my\/?$/.test(url.pathname)) return null;
+    const code = url.searchParams.get("invite") || "";
+    return INVITE_TOKEN.test(code) ? code : null;
+  } catch { return null; }
+}
+let invite = (() => {
+  const raw = new URLSearchParams(location.search).get("invite");
+  if (raw !== null) {
+    const parsed = parseInvite(raw);
+    store.sset("mayak.invite", parsed);
+    history.replaceState(null, "", location.pathname);
+    return parsed;
+  }
+  const cached = parseInvite(store.sget("mayak.invite"));
+  if (!cached) store.sset("mayak.invite", null);
+  return cached;
 })();
+let authMode = invite ? "register" : "login";
 let login = null, polling = false;
 // Начатый вход хранится между перезагрузками: телефон часто выгружает вкладку, пока человек в Telegram.
 const pending = {
@@ -288,38 +386,125 @@ document.addEventListener("visibilitychange", resume);
 window.addEventListener("pageshow", resume);
 window.addEventListener("focus", resume);
 
+function credentialCard() {
+  if (me?.hasPassword) return "";
+  return `<section class="card"><h2>Добавьте email и пароль</h2>
+    <p class="muted">Вы вошли в существующий кабинет. Добавьте данные для следующих входов; текущий доступ и устройства сохранятся.</p>
+    <form id="bindCredentialsForm" class="auth-form" novalidate>
+      <div class="auth-field"><label for="bindEmail">Электронная почта</label><input id="bindEmail" type="email" inputmode="email" maxlength="254" autocomplete="email" required value="${esc(me?.email || "")}" aria-describedby="bindEmailHelp"><p class="auth-help" id="bindEmailHelp">Email станет логином; подтверждение почты не выполняется.</p></div>
+      <div class="auth-field"><label for="bindPassword">Пароль</label><div class="auth-password"><input id="bindPassword" type="password" minlength="12" maxlength="128" autocomplete="new-password" required aria-describedby="bindPasswordHelp"><button class="btn s" id="toggleBindPassword" type="button" aria-pressed="false">Показать</button></div><p class="auth-help" id="bindPasswordHelp">12–128 символов. Вставка и менеджеры паролей поддерживаются.</p></div>
+      <button class="btn p w" id="bindCredentialsSubmit" type="submit">Сохранить данные входа</button><p class="err auth-message" id="bindCredentialsError" role="alert" aria-live="polite"></p>
+    </form></section>`;
+}
+
+function bindCredentialForm() {
+  const form = $("#bindCredentialsForm");
+  if (!form) return;
+  $("#toggleBindPassword").onclick = () => {
+    const field = $("#bindPassword"), showing = field.type === "password";
+    field.type = showing ? "text" : "password";
+    $("#toggleBindPassword").textContent = showing ? "Скрыть" : "Показать";
+    $("#toggleBindPassword").setAttribute("aria-pressed", String(showing));
+    field.focus();
+  };
+  form.addEventListener("submit", async e => {
+    e.preventDefault();
+    const emailInput = $("#bindEmail"), passwordInput = $("#bindPassword"), error = $("#bindCredentialsError");
+    const email = emailInput.value.trim(), password = passwordInput.value;
+    error.textContent = "";
+    if (!emailInput.validity.valid || email.length > 254) { error.textContent = "Введите корректный адрес электронной почты."; emailInput.focus(); return; }
+    if (password.length < 12 || password.length > 128) { error.textContent = "Пароль должен содержать от 12 до 128 символов."; passwordInput.focus(); return; }
+    const button = $("#bindCredentialsSubmit");
+    button.disabled = true; button.setAttribute("aria-busy", "true"); button.textContent = "Сохраняем…";
+    try {
+      const result = await api("/api/auth/credentials", { method: "POST", body: { email, password } });
+      if (result?.token) { token = result.token; store.set("mayak.token", token); }
+      passwordInput.value = "";
+      me = { ...me, ...(result?.account || {}), email: result?.account?.email || email, hasPassword: true };
+      await boot();
+    } catch (err) {
+      error.textContent = err.message || "Не удалось сохранить данные входа. Попробуйте ещё раз.";
+    } finally {
+      if (button.isConnected) { button.disabled = false; button.removeAttribute("aria-busy"); button.textContent = "Сохранить данные входа"; }
+    }
+  });
+}
+
 function renderLogin() {
   $("#who").innerHTML = "";
-  $("#app").innerHTML = `<div class="card hero">
+  const registering = authMode === "register";
+  $("#app").innerHTML = `<div class="card hero auth-card">
       <svg width="56" height="56" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="#0E1A2B"/><path d="M12 4.5l1.3 2h-2.6l1.3-2z" fill="#F5A524"/><path d="M10 7.5h4l1.1 10h-6.2L10 7.5z" fill="#fff"/><path d="M5.5 8l3.3 1.2M18.5 8l-3.3 1.2" stroke="#F5A524" stroke-width="1.3" stroke-linecap="round"/></svg>
-      <h1>${invite ? "Вас пригласили в Маяк" : "Маяк"}</h1>
-      <p class="muted">${invite ? "Здесь ваши устройства и ключи для подключения." : "Войдите через Telegram, чтобы получить ключ для приложения на своём телефоне или компьютере."}</p>
-      ${invite ? `<button class="btn p w" id="byInvite" style="margin-top:8px">Открыть кабинет</button>
-        <p class="muted" id="inviteHint" style="margin:14px 0 4px">Есть Telegram? Войдите через него — тогда потом можно будет входить и без ссылки:</p>` : ""}
-      <a class="btn tg w" id="tg" href="#"${isPhone ? "" : ' target="_blank" rel="noopener"'} aria-disabled="true" style="margin-top:8px">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff" aria-hidden="true"><path d="M21.5 4.3L2.9 11.5c-1.1.4-1.1 1.2-.2 1.5l4.7 1.5 1.8 5.6c.2.6.4.8.9.8.4 0 .6-.2.9-.4l2.3-2.2 4.7 3.5c.9.5 1.5.2 1.7-.8l3.1-14.6c.3-1.3-.5-1.8-1.3-1.5zM8.7 14l9.1-5.7c.4-.3.8-.1.5.2l-7.7 7-.3 3.2L8.7 14z"/></svg>
-        Войти через Telegram</a>
-      <p class="muted" id="loginHint" style="margin-top:12px">Бот попросит нажать «Запустить» — это и есть вход. Пароли не нужны.</p>
+      <h1>${registering ? "Вас пригласили в Маяк" : "Войти в кабинет"}</h1>
+      <p class="muted">${registering ? "Введите email и задайте пароль. Приглашение будет использовано только после отправки формы." : "Войдите по email и паролю, которые вы задали при регистрации."}</p>
+      ${wantApple ? `<p class="note" style="text-align:left">Доступ для iPhone или Mac выдаётся в кабинете. ${registering ? "Создайте кабинет по приглашению" : "Войдите или создайте кабинет по приглашению"}, и сразу откроется пошаговая инструкция.</p>` : ""}
+      <div class="tabs auth-tabs" aria-label="Режим аккаунта">
+        <button class="${registering ? "on" : ""}" type="button" id="authRegister" aria-pressed="${registering}">Создать кабинет</button>
+        <button class="${registering ? "" : "on"}" type="button" id="authLogin" aria-pressed="${!registering}">Войти</button>
+      </div>
+      <form id="authForm" class="auth-form" novalidate>
+        ${registering ? `<div class="auth-field"><label for="authInvite">Код или ссылка приглашения</label><input id="authInvite" name="invite" value="${esc(invite || "")}" autocomplete="off" autocapitalize="none" spellcheck="false" required aria-describedby="authInviteHelp"><p class="auth-help" id="authInviteHelp">Подойдёт код или ссылка с сайта Маяк. Код не расходуется при открытии страницы.</p></div>` : ""}
+        <div class="auth-field"><label for="authEmail">Электронная почта</label><input id="authEmail" name="email" type="email" inputmode="email" maxlength="254" autocomplete="email" required placeholder="name@example.com" aria-describedby="authEmailHelp"><p class="auth-help" id="authEmailHelp">Email будет логином; подтверждение почты не выполняется.</p></div>
+        <div class="auth-field"><label for="authPassword">Пароль</label><div class="auth-password"><input id="authPassword" name="password" type="password" minlength="12" maxlength="128" autocomplete="${registering ? "new-password" : "current-password"}" required aria-describedby="authPasswordHelp"><button class="btn s" id="toggleAuthPassword" type="button" aria-pressed="false">Показать</button></div><p class="auth-help" id="authPasswordHelp">12–128 символов. Вставка и менеджеры паролей поддерживаются.</p></div>
+        <button class="btn p w" id="submitAuth" type="submit">${registering ? "Создать кабинет" : "Войти"}</button>
+        <p class="err auth-message" id="authError" role="alert" aria-live="polite"></p>
+      </form>
+      <p class="muted" style="margin:14px 0 0">Пароль нельзя заменить или восстановить здесь. Если вы уже задали пароль, но не можете войти, обратитесь к администратору.</p>
+      ${registering && invite && !wantApple ? `<section class="card auth-secondary-downloads" style="margin:16px 0 0"><h2>Приложение Маяк</h2><p class="muted">Windows и Android: можно продолжить в приложении, введя этот код там. Код одноразовый — используйте его либо в кабинете, либо в приложении.</p><div class="row"><a class="btn s" href="/updates/packages/MayakVPN_5.1.0.20_windows_x64.exe">Windows x64 · 5.1.0.20</a><a class="btn s" href="/updates/packages/Mayak-Android-5.1.0.20-arm64-v8a-api28-signed.apk">Android ARM64</a><button class="btn s" id="copyInvite" type="button">Скопировать код</button></div></section>` : ""}
+      <details class="auth-details"><summary>Другой способ входа через Telegram</summary><a class="btn w" id="tg" href="#"${isPhone ? "" : ' target="_blank" rel="noopener"'} aria-disabled="true">Войти через Telegram</a><p class="muted" id="loginHint" role="status" aria-live="polite" style="margin-top:10px">Этот способ входа использует приглашение, если оно есть.</p></details>
     </div>`;
-  if ($("#byInvite")) $("#byInvite").onclick = async () => {
-    const b = $("#byInvite"); b.disabled = true; b.innerHTML = '<span class="spin" style="border-color:rgba(0,0,0,.25);border-top-color:#1B1405"></span>';
-    try {
-      const r = await api("/api/auth/invite", { method: "POST", body: { invite } });
-      token = r.token; store.set("mayak.token", token); store.sset("mayak.invite", null);
-      boot();
-    } catch (e) {
-      store.sset("mayak.invite", null);
-      $("#inviteHint").innerHTML = `<span class="err">${esc(e.message)}</span>`;
-      b.remove();
-    }
+  $("#authRegister").onclick = () => { authMode = "register"; renderLogin(); $("#authInvite")?.focus(); };
+  $("#authLogin").onclick = () => {
+    const typedInvite = authMode === "register" ? parseInvite($("#authInvite")?.value) : null;
+    if (typedInvite) { invite = typedInvite; store.sset("mayak.invite", typedInvite); }
+    authMode = "login"; renderLogin(); $("#authEmail")?.focus();
   };
+  if ($("#copyInvite")) $("#copyInvite").onclick = () => copy(invite);
+  $("#toggleAuthPassword").onclick = () => {
+    const field = $("#authPassword"), showing = field.type === "password";
+    field.type = showing ? "text" : "password";
+    $("#toggleAuthPassword").textContent = showing ? "Скрыть" : "Показать";
+    $("#toggleAuthPassword").setAttribute("aria-pressed", String(showing));
+    field.focus();
+  };
+  $("#authForm").addEventListener("submit", async e => {
+    e.preventDefault();
+    const error = $("#authError"), emailInput = $("#authEmail"), passwordInput = $("#authPassword");
+    const email = emailInput.value.trim(), password = passwordInput.value;
+    error.textContent = "";
+    if (!emailInput.validity.valid || email.length > 254) { error.textContent = "Введите корректный адрес электронной почты."; emailInput.focus(); return; }
+    if (password.length < 12 || password.length > 128) { error.textContent = "Пароль должен содержать от 12 до 128 символов."; passwordInput.focus(); return; }
+    const isRegistration = authMode === "register";
+    const registrationInvite = isRegistration ? parseInvite($("#authInvite").value) : null;
+    if (isRegistration && !registrationInvite) { error.textContent = "Введите код или ссылку приглашения с сайта Маяк."; $("#authInvite").focus(); return; }
+    if (registrationInvite) { invite = registrationInvite; store.sset("mayak.invite", registrationInvite); }
+    const button = $("#submitAuth");
+    button.disabled = true; button.setAttribute("aria-busy", "true"); button.textContent = "Подождите…";
+    try {
+      const result = await api(isRegistration ? "/api/auth/register" : "/api/auth/login", {
+        method: "POST", body: isRegistration ? { invite: registrationInvite, email, password } : { email, password }
+      });
+      if (!result?.token) throw new Error("Сервис не подтвердил вход. Попробуйте ещё раз.");
+      token = result.token; store.set("mayak.token", token); store.sset("mayak.invite", null);
+      invite = null; pending.set(null); authMode = "login"; passwordInput.value = ""; me = null; state = null;
+      await boot();
+    } catch (err) {
+      error.textContent = err.message || "Не удалось выполнить запрос. Попробуйте ещё раз.";
+    } finally {
+      if (button.isConnected) { button.disabled = false; button.removeAttribute("aria-busy"); button.textContent = authMode === "register" ? "Создать кабинет" : "Войти"; }
+    }
+  });
   const a = $("#tg");
-  a.onclick = e => {
-    if (!login) { e.preventDefault(); return; }
-    // Запоминаем до перехода: на телефоне страница может выгрузиться, пока человек в Telegram.
+  a.onclick = async e => {
+    if (!login) {
+      e.preventDefault();
+      a.setAttribute("aria-disabled", "true");
+      await prepareLogin();
+      if (login) $("#loginHint").textContent = "Ссылка готова. Нажмите «Войти через Telegram» ещё раз, чтобы продолжить.";
+      return;
+    }
     pollLogin(login.requestId, login.until + 15000);
   };
-  prepareLogin();
   const p = pending.get();
   if (p) pollLogin(p.id, p.until);
 }
@@ -349,8 +534,14 @@ function render() {
   $("#out").onclick = e => { e.preventDefault(); logout(); };
   if (!me.enabled) return renderWaiting();
   if (!me.active) {
-    $("#app").innerHTML = `<div class="card hero"><h1>Срок доступа закончился</h1><p class="muted">Был до ${esc(day(me.paidUntil))}. Напишите администратору, чтобы продлить.</p></div>`;
+    $("#app").innerHTML = `${credentialCard()}<div class="card hero"><h1>Срок доступа закончился</h1><p class="muted">Был до ${esc(day(me.paidUntil))}. Напишите администратору, чтобы продлить.</p></div>`;
+    bindCredentialForm();
     return;
+  }
+  if (wantApple) {
+    // Пришли за доступом для iPhone или Mac: сразу на экран выдачи, один раз.
+    wantApple = false; store.sset("mayak.intent", null);
+    if (view.name === "home") view = { name: "add", kind: appleKind() };
   }
   if (view.name === "add") return renderAdd();
   if (view.name === "setup") return renderSetup();
@@ -358,57 +549,85 @@ function render() {
 }
 
 function renderWaiting() {
-  $("#app").innerHTML = `<div class="card hero"><h1>Заявка отправлена</h1>
+  $("#app").innerHTML = `${credentialCard()}<div class="card hero"><h1>Заявка отправлена</h1>
     <p class="muted">Администратор получил уведомление. Как только доступ одобрят, бот напишет вам в Telegram, а здесь появится кнопка «Подключить устройство».</p>
     <p class="muted">Страница обновится сама.</p></div>`;
+  bindCredentialForm();
   clearTimeout(renderWaiting.t);
   renderWaiting.t = setTimeout(boot, 15000);
 }
 
 function cityCard() {
   const l = state.location;
-  if (!l) return "";
+  if (!l) return state.ready
+    ? `<div class="card"><p class="muted" style="margin:0">Местоположение сервера сейчас неизвестно. Настройки кластера сами по себе не подтверждают доступность VPN.</p></div>`
+    : `<div class="card note"><b>Серверный кластер не настроен.</b><p style="margin:6px 0 0">Добавление новых устройств пока недоступно. Обратитесь к администратору Маяка.</p></div>`;
   const photo = l.photoUrl ? ` photo" style="background-image:url('${esc(l.photoUrl)}')` : "";
   return `<div class="card city${photo}">
       <div class="label">Ваш маяк</div>
       <div class="name">${esc(l.city || "Маяк")}${l.country ? `, ${esc(l.country)}` : ""}</div>
       ${l.fact ? `<div class="fact">${esc(l.fact)}</div>` : ""}
-      <div class="status"><span class="dot ${l.online ? "on" : ""}"></span>${l.online ? "Сервер работает" : "Сервер не отвечает — мы уже разбираемся"}</div>
+      <div class="status"><span class="dot ${l.online ? "on" : ""}"></span>${l.online ? "Узел недавно сообщал о работе" : "Нет свежего сигнала от узла"}</div>
+      <p class="muted" style="margin:6px 0 0">Сигнал узла не подтверждает доступность VPN-соединения или свободного сервера.</p>
     </div>`;
+}
+
+const PKG = {
+  windows: "/updates/packages/MayakVPN_5.1.0.20_windows_x64.exe",
+  android: "/updates/packages/Mayak-Android-5.1.0.20-arm64-v8a-api28-signed.apk",
+  source: "/updates/packages/MayakVPN-5.1.0.20-source.zip",
+  version: "5.1.0.20",
+};
+const APPLE = [
+  { kind: "IPhone", title: "iPhone / iPad", need: "iOS 15 или новее" },
+  { kind: "Mac", title: "Mac", need: "macOS 12 или новее" },
+];
+function appleKind() { return here === "Mac" ? "Mac" : "IPhone"; }
+function serverName() {
+  const l = state?.location;
+  return l?.city ? `${l.city}${l.country ? `, ${l.country}` : ""}` : "";
 }
 
 function renderHome() {
   const devs = state.devices;
   const canAdd = devs.length < me.maxDevices;
-  $("#app").innerHTML = `${cityCard()}
+  $("#app").innerHTML = `${credentialCard()}${cityCard()}
+    <div class="card">
+      <h2>Подключить устройство</h2>
+      <div class="choices">
+        <a class="choice" href="${PKG.windows}"><span class="ico">${ICON.Windows}</span><span class="grow"><b>Скачать для Windows</b><span class="muted">Приложение Маяк ${PKG.version} · x64 · без цифровой подписи</span></span></a>
+        <a class="choice" href="${PKG.android}"><span class="ico">${ICON.Android}</span><span class="grow"><b>Скачать для Android</b><span class="muted">Приложение Маяк ${PKG.version} · Android 9 или новее · APK подписан</span></span></a>
+        <button class="choice main" type="button" id="apple"><span class="ico">${ICON.IPhone}</span><span class="grow"><b>Получить доступ для iPhone или Mac</b><span class="muted">Файл доступа и пошаговая инструкция для AmneziaWG</span></span></button>
+      </div>
+      <p class="muted">В приложении для Windows или Android войдите по своей почте и паролю и нажмите большую кнопку: приложение само выберет сервер и займёт место устройства.${me.hasPassword ? "" : " Если входили по старому приглашению, сначала добавьте почту и пароль выше."}</p>
+      <p class="muted"><a href="${PKG.source}">Исходный код Маяка ${PKG.version} · GPLv3</a></p>
+      <p class="note" style="margin-top:8px">Тестовый выпуск. Перед первым использованием проверьте подключение с администратором.</p>
+      <details><summary>Старый способ подключения</summary><div id="appKey"><button class="btn s" id="getKey">Показать ключ для приложения</button></div></details>
+    </div>
     <div class="card">
       <div class="row" style="margin-bottom:4px"><h2 class="grow" style="margin:0">Устройства</h2><span class="muted">${devs.length} из ${me.maxDevices}</span></div>
-      ${devs.length ? "" : `<p class="muted" style="margin:10px 0 4px">Пока ни одного. Добавьте устройство — получите ключ и короткую инструкцию.</p>`}
+      ${devs.length ? "" : `<p class="muted" style="margin:10px 0 4px">Пока ни одного. Устройство появится здесь, когда вы войдёте в приложении или получите доступ для iPhone или Mac.</p>`}
       <div id="devs"></div>
-      ${canAdd ? `<button class="btn p w" id="add" style="margin-top:12px">+ Подключить устройство</button>`
-               : `<p class="muted" style="margin-top:12px">Достигнут лимит устройств. Чтобы добавить новое, удалите ненужное.</p>`}
+      ${canAdd ? "" : `<p class="muted" style="margin-top:12px">Достигнут лимит устройств. Чтобы добавить новое, удалите ненужное.</p>`}
     </div>
-    ${state.app ? `<div class="card"><h2>Приложение Маяк</h2>
-      <p class="muted">Своё приложение: одна кнопка «Подключиться», устройства добавляются сами. Ключ подписки один на все ваши устройства.</p>
-      <div id="appKey"><button class="btn s p" id="getKey">Показать ключ подписки</button>
-      ${state.app.downloadUrl ? `<a class="btn s" href="${esc(state.app.downloadUrl)}" target="_blank" rel="noopener">Скачать приложение</a>` : `<span class="muted">Проверка перед выпуском — видно только администраторам.</span>`}</div></div>` : ""}
     <div class="card"><p class="muted" style="margin:0">Доступ ${me.paidUntil ? `до ${esc(day(me.paidUntil))}` : "без срока"}${me.downMbps ? ` · скорость до ${me.downMbps} Мбит/с` : ""}. Вопросы — администратору в Telegram.</p></div>`;
+  bindCredentialForm();
   const box = $("#devs");
   for (const d of devs) {
     const el = document.createElement("div");
     el.className = "dev";
     el.innerHTML = `<div class="ico">${ICON[d.kind] || ICON.Other}</div>
       <div class="grow"><b>${esc(d.name)}</b><div class="muted">${d.enabled ? esc(ago(d.lastHandshake)) : "приостановлено администратором"}</div></div>
-      ${d.canExport ? `<button class="btn s" data-id="${d.id}">Ключ</button>` : `<span class="muted">в приложении Маяк</span>`}`;
+      ${!d.enabled ? `<span class="muted">доступ устройства выключен</span>` : d.canExport ? `<button class="btn s" data-id="${d.id}">${d.kind === "IPhone" || d.kind === "Mac" ? "Инструкция" : "Ключ"}</button>` : `<span class="muted">в приложении Маяк</span>`}`;
     const b = el.querySelector("button");
     if (b) b.onclick = () => openSetup(d);
     box.appendChild(el);
   }
-  if ($("#add")) $("#add").onclick = () => { view = { name: "add", kind: here }; render(); };
+  $("#apple").onclick = () => { view = { name: "add", kind: appleKind() }; render(); };
   if ($("#getKey")) $("#getKey").onclick = async () => {
     try {
       const r = await api("/api/app-key");
-      $("#appKey").innerHTML = `<ol class="steps"><li>Установите ${state.app.downloadUrl ? `<a href="${esc(state.app.downloadUrl)}" target="_blank" rel="noopener">приложение Маяк</a>` : "приложение Маяк"}.</li>
+      $("#appKey").innerHTML = `<ol class="steps"><li>Установите приложение Маяк по ссылке для Windows или Android выше.</li>
         <li>Скопируйте ключ:<div class="key">${esc(r.key)}</div><button class="btn s p" id="cpApp">Скопировать</button></li>
         <li>В приложении нажмите «Добавить» → «Вставить ключ» — и «Подключиться».</li></ol>`;
       $("#cpApp").onclick = () => copy(r.key);
@@ -416,33 +635,56 @@ function renderHome() {
   };
 }
 
+// Выдача доступа для iPhone или Mac: устройство создаётся сразу, затем открывается подробная инструкция.
 function renderAdd() {
+  if (!APPLE.some(p => p.kind === view.kind)) view.kind = appleKind();
+  const canAdd = state.devices.length < me.maxDevices;
+  const server = serverName();
+  const blocked = !state.ready
+    ? `<p class="note">Серверный кластер не настроен. Обратитесь к администратору, чтобы получить доступ.</p>`
+    : !canAdd ? `<p class="note">Достигнут лимит: ${state.devices.length} из ${me.maxDevices} устройств. Вернитесь назад и удалите ненужное устройство, затем получите доступ.</p>` : "";
   $("#app").innerHTML = `<div class="card">
       <button class="link" id="back">← Назад</button>
-      <h1 style="margin-top:10px">Какое устройство подключаем?</h1>
-      <div class="platforms" id="pl" style="margin:14px 0"></div>
+      <h1 style="margin-top:10px">Доступ для iPhone или Mac</h1>
+      <p class="muted">Для iPhone и Mac нет отдельного приложения Маяк. Маяк выдаст личный файл доступа, а подключаться вы будете через приложение AmneziaWG из App Store.
+        Доступ ведёт на основной сервер Маяка${server ? ` (${esc(server)})` : ""}.</p>
+      <h3>Какое устройство подключаем?</h3>
+      <div class="platforms" id="pl" style="margin:10px 0 14px"></div>
       <label class="muted" for="nm">Название (чтобы отличать устройства)</label>
-      <input id="nm" maxlength="40" placeholder="Например: телефон мамы" style="margin:6px 0 14px">
-      <button class="btn p w" id="go">Получить ключ</button>
+      <input id="nm" maxlength="40" placeholder="Например: iPhone мамы" style="margin:6px 0 14px">
+      ${blocked}
+      <button class="btn p w" id="go"${blocked ? " disabled" : ""}>Получить доступ</button>
       <p class="err" id="err" style="margin-top:10px"></p>
+      <p class="muted" style="margin-top:6px">После нажатия откроется пошаговая инструкция: установить AmneziaWG, добавить файл доступа, разрешить VPN, включить и проверить.</p>
     </div>`;
   const pl = $("#pl");
-  for (const p of PLATFORMS) {
+  for (const p of APPLE) {
     const b = document.createElement("button");
-    b.innerHTML = `${ICON[p.kind]}<span>${p.title}</span>`;
+    b.type = "button";
+    b.innerHTML = `${ICON[p.kind]}<span>${p.title}</span><span class="muted" style="font-weight:400;font-size:12.5px">${p.need}</span>`;
     b.classList.toggle("on", view.kind === p.kind);
-    b.onclick = () => { view.kind = p.kind; pl.querySelectorAll("button").forEach(x => x.classList.remove("on")); b.classList.add("on"); };
+    b.setAttribute("aria-pressed", String(view.kind === p.kind));
+    b.onclick = () => {
+      view.kind = p.kind;
+      pl.querySelectorAll("button").forEach(x => { x.classList.remove("on"); x.setAttribute("aria-pressed", "false"); });
+      b.classList.add("on"); b.setAttribute("aria-pressed", "true");
+    };
     pl.appendChild(b);
   }
   $("#back").onclick = () => { view = { name: "home" }; render(); };
   $("#go").onclick = async () => {
-    const btn = $("#go"); btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
+    const btn = $("#go"); btn.disabled = true; btn.setAttribute("aria-busy", "true"); btn.textContent = "Готовим доступ…";
     try {
       const r = await api("/api/devices", { method: "POST", body: { name: $("#nm").value, kind: view.kind } });
       state.devices.push(r.device);
       view = { name: "setup", device: r.device, files: r.files, fresh: true };
       render();
-    } catch (e) { $("#err").textContent = e.message; btn.disabled = false; btn.textContent = "Получить ключ"; }
+    } catch (e) {
+      $("#err").textContent = e.code === "no_ready_exit" ? "Сейчас системе не удалось назначить настроенный сервер для нового устройства. Попробуйте позже или обратитесь к администратору Маяка."
+        : e.code === "provisioning" ? "Настройка сервера ещё выполняется. Попробуйте позже или обратитесь к администратору Маяка."
+        : e.message;
+      btn.disabled = false; btn.removeAttribute("aria-busy"); btn.textContent = "Получить доступ";
+    }
   };
 }
 
@@ -457,17 +699,20 @@ async function openSetup(d) {
 function renderSetup() {
   const { device: d, files: f } = view;
   const kind = PLATFORMS.some(p => p.kind === d.kind) ? d.kind : here;
+  const apple = kind === "IPhone" || kind === "Mac";
   const opts = options(kind, f);
   const sel = view.opt || opts[0].id;
   const cur = opts.find(o => o.id === sel) || opts[0];
   $("#app").innerHTML = `<div class="card">
       <button class="link" id="back">← К устройствам</button>
       <div class="row" style="margin-top:12px"><div class="ico">${ICON[d.kind] || ICON.Other}</div><div class="grow"><h1 style="margin:0">${esc(d.name)}</h1>
-        <div class="muted">${view.fresh ? "Устройство добавлено. Осталось настроить приложение." : "Ключ этого устройства"}</div></div></div>
-      ${kind !== here && (kind === "IPhone" || kind === "Android") ? `<p class="note" style="margin-top:14px">Вы настраиваете телефон с другого устройства: отсканируйте QR-код ниже приложением AmneziaWG на телефоне. Или откройте этот сайт на самом телефоне — там всё делается в пару нажатий.</p>` : ""}
+        <div class="muted">${view.fresh ? (apple ? "Доступ готов. Осталось пройти шаги ниже." : "Устройство добавлено. Осталось настроить приложение.") : apple ? "Инструкция и файл доступа этого устройства" : "Ключ этого устройства"}</div></div></div>
+      ${apple ? `<p class="muted" style="margin-top:14px">Доступ ведёт на основной сервер Маяка${serverName() ? ` (${esc(serverName())})` : ""}. Файл и QR-код можно открыть снова кнопкой «Инструкция» у этого устройства в кабинете.</p>` : ""}
+      ${kind !== here && kind === "Android" ? `<p class="note" style="margin-top:14px">Вы настраиваете телефон с другого устройства: отсканируйте QR-код ниже приложением AmneziaWG на телефоне. Или откройте этот сайт на самом телефоне — там всё делается в пару нажатий.</p>` : ""}
       <div class="tabs" style="margin-top:16px">${opts.map((o, i) => `<button data-o="${o.id}" class="${o.id === cur.id ? "on" : ""}">${esc(o.title)}${i === 0 ? " · рекомендуем" : ""}</button>`).join("")}</div>
       <div id="how">${cur.html}</div>
-      <p class="muted" style="margin-top:16px">Ключ личный: не пересылайте его другим — для другого устройства добавьте новое.</p>
+      ${apple ? `<p class="note" style="margin-top:16px">На ${d.kind === "Mac" ? "Mac" : "iPhone"} через Маяк идёт весь трафик, в том числе российские сайты: разделения «Россия напрямую», как в приложении для Windows и Android, здесь нет. Если российский сервис не открывается, выключите туннель на время.</p>` : ""}
+      <p class="muted" style="margin-top:16px">${apple ? "Файл доступа личный: не пересылайте его другим. Для другого устройства получите отдельный доступ." : "Ключ личный: не пересылайте его другим — для другого устройства добавьте новое."}</p>
     </div>
     ${f.vless ? `<div class="card"><details><summary>Не подключается? Запасной способ</summary>
       <p style="margin-top:10px">Ссылка для приложений с протоколом VLESS: <b>v2RayTun</b>, <b>Happ</b>, <b>Streisand</b> (iPhone), <b>v2rayNG</b> (Android), <b>Hiddify</b> (любые системы).
@@ -477,6 +722,7 @@ function renderSetup() {
     <div class="card row"><button class="btn s d" id="del">Удалить устройство</button>
       <span class="muted grow">Ключ на нём перестанет работать.</span></div>`;
   $("#back").onclick = () => { view = { name: "home" }; boot(); };
+  renderDeviceSubscription(d);
   document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => { view.opt = b.dataset.o; render(); });
   document.querySelectorAll('[data-act="key"]').forEach(b => b.onclick = () => copy(f.vpnKey));
   document.querySelectorAll('[data-act="file"]').forEach(b => b.onclick = () => download(f.confName, f.conf));
@@ -486,6 +732,107 @@ function renderSetup() {
     try { await api(`/api/devices/${d.id}`, { method: "DELETE" }); view = { name: "home" }; toast("Устройство удалено"); boot(); }
     catch (e) { toast(e.message); }
   };
+}
+
+function renderDeviceSubscription(device) {
+  const card = document.createElement("section");
+  card.className = "card";
+  card.setAttribute("aria-labelledby", "subscriptionTitle");
+  const title = document.createElement("h2");
+  title.id = "subscriptionTitle";
+  title.textContent = "Подписка для v2RayTun";
+  card.append(title);
+  const note = document.createElement("p");
+  note.className = "muted";
+  note.textContent = "Новая ссылка заменит предыдущую. Если вы уже добавляли эту подписку, обновите её в приложении. Скачанные конфиги продолжат работать; чтобы полностью отключить устройство, выключите или удалите его.";
+  card.append(note);
+
+  const actions = document.createElement("div");
+  actions.className = "row";
+  const issue = document.createElement("button");
+  issue.className = "btn p";
+  issue.type = "button";
+  issue.textContent = "Создать / перевыпустить ссылку";
+  const revoke = document.createElement("button");
+  revoke.className = "btn d";
+  revoke.type = "button";
+  revoke.textContent = "Отозвать ссылку";
+  const result = document.createElement("div");
+  result.className = "subscription-result";
+  result.setAttribute("aria-live", "polite");
+  result.setAttribute("role", "status");
+  actions.append(issue, revoke);
+  card.append(actions, result);
+  $("#app").append(card);
+
+  const canUse = !!me?.enabled && !!me?.active && !!device.enabled;
+  issue.disabled = !canUse;
+  revoke.disabled = !canUse;
+  if (!canUse) {
+    const blocked = document.createElement("p");
+    blocked.className = "note";
+    blocked.textContent = !device.enabled ? "Устройство выключено администратором." : "Для подписки нужен включённый аккаунт с действующим доступом.";
+    card.insertBefore(blocked, actions);
+  }
+  if (view.subscriptionError) showSubscriptionFailure(view.subscriptionError, result);
+  else if (view.subscription?.deviceId === device.id) showSubscription(view.subscription, result);
+
+  issue.onclick = async () => {
+    if (!canUse || !confirm("Выпустить новую ссылку? Она заменит прежнюю ссылку подписки. Уже скачанные конфиги продолжат работать.")) return;
+    issue.disabled = true;
+    result.textContent = "Создаём ссылку…";
+    try {
+      const created = await api(`/api/devices/${encodeURIComponent(device.id)}/subscription`, { method: "POST" });
+      view.subscription = created;
+      view.subscriptionError = null;
+      showSubscription(created, result);
+    } catch (e) {
+      view.subscriptionError = { operation: "rotation", message: e.message || "Ошибка сервера" };
+      showSubscriptionFailure(view.subscriptionError, result);
+    } finally { issue.disabled = !canUse; }
+  };
+  revoke.onclick = async () => {
+    if (!canUse || !confirm("Отозвать ссылку подписки? Она перестанет обновлять конфигурацию. Уже скачанные конфиги продолжат работать, пока устройство включено. Для полного отключения выключите или удалите устройство.")) return;
+    revoke.disabled = true;
+    result.textContent = "Отзываем ссылку…";
+    try {
+      await api(`/api/devices/${encodeURIComponent(device.id)}/subscription`, { method: "DELETE" });
+      view.subscription = null;
+      view.subscriptionError = null;
+      result.textContent = "Ссылка отозвана. Уже скачанные конфиги продолжают работать, пока устройство включено.";
+    } catch (e) {
+      view.subscriptionError = { operation: "revoke", message: e.message || "Ошибка сервера" };
+      showSubscriptionFailure(view.subscriptionError, result);
+    } finally { revoke.disabled = !canUse; }
+  };
+}
+
+function showSubscription(subscription, target) {
+  target.replaceChildren();
+  const label = document.createElement("p"); label.className = "muted"; label.textContent = "Ссылка для обновления подписки (хранится только в этой вкладке):";
+  const value = document.createElement("div"); value.className = "key"; value.textContent = subscription.url;
+  const row = document.createElement("div"); row.className = "row";
+  const copyButton = document.createElement("button"); copyButton.type = "button"; copyButton.className = "btn s"; copyButton.textContent = "Скопировать ссылку"; copyButton.onclick = () => copy(subscription.url);
+  const importLink = document.createElement("a"); importLink.className = "btn s p"; importLink.textContent = "Открыть в v2RayTun"; importLink.href = subscription.importUrl; importLink.rel = "noopener";
+  row.append(copyButton, importLink);
+  target.append(label, value, row);
+}
+
+function showSubscriptionFailure(failure, target) {
+  target.replaceChildren();
+  const error = document.createElement("p"); error.className = "err"; error.setAttribute("role", "alert");
+  error.textContent = failure.message || "Не удалось подтвердить результат запроса.";
+  const warning = document.createElement("p"); warning.className = "note";
+  warning.textContent = failure.operation === "rotation"
+    ? "Результат перевыпуска не подтверждён: последняя полученная ссылка могла уже смениться и может не работать. Не считайте её активной без проверки."
+    : "Результат отзыва не подтверждён: последняя полученная ссылка могла уже перестать обновляться. Её состояние неизвестно."
+  target.append(error, warning);
+  if (!view.subscription?.url) return;
+  const label = document.createElement("p"); label.className = "muted"; label.textContent = "Последняя полученная ссылка (её актуальность не подтверждена):";
+  const value = document.createElement("div"); value.className = "key"; value.textContent = view.subscription.url;
+  const copyButton = document.createElement("button"); copyButton.type = "button"; copyButton.className = "btn s";
+  copyButton.textContent = "Скопировать последнюю ссылку"; copyButton.onclick = () => copy(view.subscription.url);
+  target.append(label, value, copyButton);
 }
 
 function download(name, text) {
@@ -500,3 +847,10 @@ boot();
 </script>
 </body>
 </html>
+
+
+
+
+
+
+
