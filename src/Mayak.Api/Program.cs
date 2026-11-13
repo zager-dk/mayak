@@ -45,6 +45,8 @@ if (cfg.GetValue("Telegram:Polling", true)) builder.Services.AddHostedService<Te
 // Проверка доступности серверов с машины API (этап A, PROBES_PLAN.md): фоном раз в 5 минут (Probes:IntervalSeconds)
 // и по кнопке в админке. Фон выключается Probes:Background=false, всё целиком — Probes:Enabled=false.
 if (cfg.GetValue("Probes:Enabled", true) && cfg.GetValue("Probes:Background", true)) builder.Services.AddHostedService<ServerProbeService>();
+// Срок хранения истории использования (статистика админки): 14 дней по часам, 1 год по суткам. Usage:Retention=false — выключить.
+if (cfg.GetValue("Usage:Retention", true)) builder.Services.AddHostedService<UsageRetentionService>();
 builder.Services.ConfigureHttpJsonOptions(o =>
 {
     o.SerializerOptions.Converters.Add(new JsonStringEnumConverter());

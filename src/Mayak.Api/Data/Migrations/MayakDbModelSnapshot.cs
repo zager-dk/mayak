@@ -428,6 +428,48 @@ namespace Mayak.Api.Data.Migrations
                     b.ToTable("ServerProbes");
                 });
 
+            modelBuilder.Entity("Mayak.Api.Data.PeerCounter", b =>
+                {
+                    b.Property<Guid>("ServerId").HasColumnType("uuid");
+                    b.Property<string>("PublicKey").HasMaxLength(64).HasColumnType("character varying(64)");
+                    b.Property<DateTime>("At").HasColumnType("timestamp with time zone");
+                    b.Property<DateTime?>("LastHandshake").HasColumnType("timestamp with time zone");
+                    b.Property<long>("RxBytes").HasColumnType("bigint");
+                    b.Property<long>("TxBytes").HasColumnType("bigint");
+                    b.HasKey("ServerId", "PublicKey");
+                    b.ToTable("PeerCounters");
+                });
+
+            modelBuilder.Entity("Mayak.Api.Data.DeviceUsage", b =>
+                {
+                    b.Property<Guid>("DeviceId").HasColumnType("uuid");
+                    b.Property<Guid>("ServerId").HasColumnType("uuid");
+                    b.Property<short>("Span").HasColumnType("smallint");
+                    b.Property<DateTime>("Bucket").HasColumnType("timestamp with time zone");
+                    b.Property<int>("OnlineSeconds").HasColumnType("integer");
+                    b.Property<long>("RxBytes").HasColumnType("bigint");
+                    b.Property<long>("TxBytes").HasColumnType("bigint");
+                    b.HasKey("DeviceId", "ServerId", "Span", "Bucket");
+                    b.HasIndex("ServerId", "Span", "Bucket");
+                    b.HasIndex("Span", "Bucket");
+                    b.ToTable("DeviceUsage");
+                });
+
+            modelBuilder.Entity("Mayak.Api.Data.ServerUsage", b =>
+                {
+                    b.Property<Guid>("ServerId").HasColumnType("uuid");
+                    b.Property<short>("Span").HasColumnType("smallint");
+                    b.Property<DateTime>("Bucket").HasColumnType("timestamp with time zone");
+                    b.Property<int>("PeakPeers").HasColumnType("integer");
+                    b.Property<long>("PeerSeconds").HasColumnType("bigint");
+                    b.Property<int>("Reports").HasColumnType("integer");
+                    b.Property<long>("RxBytes").HasColumnType("bigint");
+                    b.Property<long>("TxBytes").HasColumnType("bigint");
+                    b.HasKey("ServerId", "Span", "Bucket");
+                    b.HasIndex("Span", "Bucket");
+                    b.ToTable("ServerUsage");
+                });
+
             modelBuilder.Entity("Mayak.Api.Data.Server", b =>
                 {
                     b.Property<Guid>("Id")
@@ -574,6 +616,22 @@ namespace Mayak.Api.Data.Migrations
                 });
 
             modelBuilder.Entity("Mayak.Api.Data.ServerProbe", b =>
+                {
+                    b.HasOne("Mayak.Api.Data.Server", null).WithMany().HasForeignKey("ServerId").OnDelete(DeleteBehavior.Cascade).IsRequired();
+                });
+
+            modelBuilder.Entity("Mayak.Api.Data.PeerCounter", b =>
+                {
+                    b.HasOne("Mayak.Api.Data.Server", null).WithMany().HasForeignKey("ServerId").OnDelete(DeleteBehavior.Cascade).IsRequired();
+                });
+
+            modelBuilder.Entity("Mayak.Api.Data.DeviceUsage", b =>
+                {
+                    b.HasOne("Mayak.Api.Data.Device", null).WithMany().HasForeignKey("DeviceId").OnDelete(DeleteBehavior.Cascade).IsRequired();
+                    b.HasOne("Mayak.Api.Data.Server", null).WithMany().HasForeignKey("ServerId").OnDelete(DeleteBehavior.Cascade).IsRequired();
+                });
+
+            modelBuilder.Entity("Mayak.Api.Data.ServerUsage", b =>
                 {
                     b.HasOne("Mayak.Api.Data.Server", null).WithMany().HasForeignKey("ServerId").OnDelete(DeleteBehavior.Cascade).IsRequired();
                 });

@@ -44,6 +44,16 @@ public static class AdminEndpoints
             });
         });
 
+        // ───── Статистика (объём и время в сети, попытки подключения; без адресов и сайтов) ─────
+        g.MapGet("/stats/overview", async (int? days, MayakDb db, HttpContext http) =>
+            Results.Ok(await StatsService.OverviewAsync(db, DateTime.UtcNow, days ?? 30, http.RequestAborted)));
+        g.MapGet("/stats/accounts", async (MayakDb db, HttpContext http) =>
+            Results.Ok(await StatsService.AccountsSummaryAsync(db, DateTime.UtcNow, http.RequestAborted)));
+        g.MapGet("/stats/accounts/{id:guid}", async (Guid id, int? days, MayakDb db, HttpContext http) =>
+            await StatsService.AccountAsync(db, id, DateTime.UtcNow, days ?? 30, http.RequestAborted) is { } r ? Results.Ok(r) : Results.NotFound());
+        g.MapGet("/stats/servers/{id:guid}", async (Guid id, int? days, MayakDb db, HttpContext http) =>
+            await StatsService.ServerAsync(db, id, DateTime.UtcNow, days ?? 30, http.RequestAborted) is { } r ? Results.Ok(r) : Results.NotFound());
+
         // ───── Люди ─────
         g.MapGet("/accounts", async (string? q, MayakDb db) =>
         {

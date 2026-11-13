@@ -73,11 +73,91 @@
 </style>
 <link rel="icon" type="image/svg+xml" href="/newassets/mayak-v1/mayak-favicon-32.svg">
 <link rel="stylesheet" href="/newassets/mayak-v1/ui.css?v=20261110f"><script defer src="/newassets/mayak-v1/theme.js"></script>
+<style>
+  /* Статистика и раскладка «список + карточка» (только админка; идёт после ui.css). */
+  body.admin-page { --c-down: var(--beam); --c-up: #6f8fd6; }
+  body.admin-page main > .split, body.admin-page main > .dash { max-width: 1360px; }
+  .split { display: grid; grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); gap: 20px; align-items: start; }
+  .split > .pane-list { position: sticky; top: 76px; }
+  .split > .pane-list > .card { margin: 0; display: flex; flex-direction: column; max-height: calc(100vh - 100px); }
+  .split > .pane-list .list { overflow-y: auto; min-height: 120px; flex: 1 1 auto; }
+  .split > .pane-list input[type=search] { width: 100%; margin-top: 12px; }
+  .split .filters { margin-top: 10px; }
+  .split .filters select { flex: 1 1 140px; min-height: 36px; }
+  body.admin-page .list > div.sel { background: var(--beam-soft); box-shadow: inset 4px 0 0 var(--beam); }
+  body.admin-page .list > div .err { font-size: 13px !important; }
+  .count { font-size: 15px; font-weight: 500; color: var(--ink-muted); }
+  .back { display: none !important; }
+  .person-head h2 { margin: 0; }
+  .meta { margin: 8px 0 16px; }
+  @media (max-width: 1099px) {
+    .split { grid-template-columns: minmax(0, 1fr); }
+    .split > .pane-list { position: static; }
+    .split > .pane-list > .card { max-height: none; }
+    .split.has-sel > .pane-list { display: none; }
+    .split:not(.has-sel) > .pane-detail > .empty { display: none; }
+    .back { display: inline-flex !important; align-items: center; }
+  }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .seg.wrap { border: 0; border-radius: 0; overflow: visible; gap: 6px; }
+  .seg.wrap button, .seg.wrap button + button { border: 1px solid var(--line-strong); border-radius: 999px; padding: 4px 12px; }
+  body.admin-page .table-wrap th, body.admin-page td.nowrap { white-space: nowrap; }
+  body.admin-page td.dev { min-width: 150px; }
+  .dash > .kpis { margin-bottom: 16px; }
+  .kpi { padding: 14px 16px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line); min-width: 0; }
+  .kpi b { display: block; font-size: 26px; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; color: var(--ink); }
+  .kpi b .of { font-size: 16px; font-weight: 500; color: var(--ink-muted); }
+  .kpi span { display: block; font-size: 14px !important; color: var(--ink); margin-top: 2px; }
+  .kpi small { display: block; font-size: 13px !important; color: var(--ink-muted); margin-top: 4px; }
+  .kpi.skeleton b { color: var(--ink-faint); }
+  .kpi b small.of { display: inline; margin: 0; font-size: 16px !important; font-weight: 500; }
+  .split .list > div { align-items: flex-start; }
+  .split .list > div > .dot { margin-top: 8px; }
+  body.admin-page .table-wrap td, body.admin-page .table-wrap th { padding-inline: 10px; }
+  .dash-head { margin-bottom: 14px; }
+  .dash-head h2 { margin: 0; }
+  body.admin-page h3.sub { margin: 22px 0 6px; }
+  body.admin-page .card > h3:first-child, body.admin-page .card > .row > h3 { margin: 0 0 6px; }
+  .cols2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .cols2 > .card { margin-bottom: 16px; min-width: 0; }
+  @media (max-width: 900px) { .cols2 { grid-template-columns: minmax(0, 1fr); gap: 0; } }
+  .seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--line-strong); border-radius: 10px; overflow: hidden; }
+  .seg button { border: 0; background: transparent; color: var(--ink-muted); padding: 6px 12px; min-height: 36px; font: inherit; font-size: 14px !important; cursor: pointer; }
+  .seg button + button { border-left: 1px solid var(--line); }
+  .seg button[aria-pressed=true] { background: var(--surface-3); color: var(--ink); font-weight: 650; }
+  .seg button span { color: var(--ink-muted); font-weight: 500; }
+  .chart-wrap { margin-top: 10px; }
+  .chart-max { font-size: 12px; color: var(--ink-muted); margin-bottom: 2px; font-variant-numeric: tabular-nums; }
+  .chart { display: grid; gap: 2px; align-items: end; height: 150px; border-bottom: 1px solid var(--line-strong); border-top: 1px dashed var(--line); }
+  .chart .col { display: flex; flex-direction: column-reverse; height: 100%; min-width: 0; }
+  .chart .col i { display: block; width: 100%; border-radius: 2px 2px 0 0; }
+  .chart .col:hover i { filter: brightness(1.15); }
+  .chart-axis { display: flex; justify-content: space-between; font-size: 12px; color: var(--ink-muted); margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 6px; font-size: 13px; color: var(--ink-muted); }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+  .chart-empty { margin: 10px 0 0; }
+  .table-wrap { overflow-x: auto; max-width: 100%; }
+  body.admin-page .table-wrap table { margin-top: 8px; }
+  body.admin-page td.num, body.admin-page th.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  body.admin-page tr.clickable { cursor: pointer; }
+  body.admin-page tr.clickable:focus-visible td { background: var(--beam-soft); }
+  body.admin-page .chip.ok { color: var(--green); border-color: currentColor; background: transparent; }
+  body.admin-page .chip.bad { color: var(--red); border-color: currentColor; background: transparent; }
+  .attn { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 6px; }
+  .attn li { display: flex; align-items: center; gap: 10px; }
+  .attn li::before { content: ""; width: 10px; height: 10px; border-radius: 50%; flex: none; background: var(--ink-faint); }
+  .attn li.bad::before { background: var(--red); } .attn li.warn::before { background: var(--orange); }
+  .linkish { border: 0; background: none; padding: 4px 0; min-height: 32px; font: inherit; color: var(--ink); text-align: left; cursor: pointer; text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
+  .linkish:hover { text-decoration-color: var(--beam); }
+  ul.plain { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 4px; }
+  @media (prefers-reduced-motion: reduce) { .chart .col:hover i { filter: none; } }
+</style>
 </head>
 <body class="admin-page">
 <header><div class="brand"><img src="/newassets/mayak-v1/mayak-f7-small-on.svg" width="34" height="34" alt="" aria-hidden="true"><span class="wordmark">маяк</span></div><span class="muted" style="color:#8C9AAE">управление</span><button type="button" class="theme-toggle" data-theme-toggle aria-label="Тема: ночь. Переключить на день">День</button><span class="who" id="who"></span></header>
 <nav id="tabs" hidden>
-  <button data-t="people" class="on">Люди</button>
+  <button data-t="overview" class="on">Обзор</button>
+  <button data-t="people">Люди</button>
   <button data-t="servers">Серверы</button>
   <button data-t="settings">Настройки</button>
   <button data-t="audit">Журнал</button>
@@ -89,7 +169,7 @@
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} } };
-let token = store.get("mayak.token"), me = null, tab = "people", selected = null, activeProvisionFlow = null;
+let token = store.get("mayak.token"), me = null, tab = "overview", selected = null, activeProvisionFlow = null;
 const kinds = { Windows: "Windows", Android: "Android", IPhone: "iPhone", Mac: "Mac", Linux: "Linux", Other: "Другое" };
 const rank = r => ({ owner: 3, admin: 2, support: 1 }[r] || 0);
 
@@ -189,59 +269,172 @@ function render() {
     return;
   }
   document.querySelectorAll("#tabs button").forEach(b => { b.classList.toggle("on", b.dataset.t === tab); b.onclick = () => { tab = b.dataset.t; selected = null; selectedServer = null; render(); }; });
-  ({ people, servers, settings, audit })[tab]().catch(e => app.innerHTML = `<div class="card err">${esc(e.message)}</div>`);
+  ({ overview, people, servers, settings, audit })[tab]().catch(e => app.innerHTML = `<div class="card err">${esc(e.message)}</div>`);
+}
+function go(t, id) { clearProvisionSecrets(); tab = t; selected = t === "people" ? id || null : null; selectedServer = t === "servers" ? id || null : null; render(); window.scrollTo({ top: 0 }); }
+
+// ───── Статистика: форматы и графики ─────
+const C_DOWN = "var(--c-down)", C_UP = "var(--c-up)";
+const num = n => Number(n || 0).toLocaleString("ru-RU");
+const gb = n => { n = Number(n || 0); const f = (v, d) => v.toFixed(d).replace(".", ","); return !n ? "0" : n >= 1e12 ? f(n / 1e12, 2) + " ТБ" : n >= 1e9 ? f(n / 1e9, n >= 1e10 ? 0 : 1) + " ГБ" : n >= 1e6 ? Math.round(n / 1e6) + " МБ" : n >= 1e3 ? Math.round(n / 1e3) + " КБ" : n + " Б"; };
+const dur = s => { s = Math.round(s || 0); if (s < 60) return s ? s + " с" : "0"; const m = Math.round(s / 60); if (m < 60) return m + " мин"; const h = Math.floor(m / 60), r = m % 60; return h + " ч" + (r && h < 10 ? " " + r + " мин" : ""); };
+const ago = d => { if (!d) return "никогда"; const s = (Date.now() - new Date(d)) / 1000; if (s < 180) return "сейчас"; if (s < 3600) return Math.round(s / 60) + " мин назад"; if (s < 86400) return Math.round(s / 3600) + " ч назад"; const n = Math.round(s / 86400); return n < 45 ? n + " дн назад" : day(d); };
+const pct = v => v == null ? "—" : String(Math.round(v * 10) / 10).replace(".", ",") + "%";
+const secs = v => v == null ? "—" : v >= 60 ? dur(v) : (v < 10 ? v.toFixed(1).replace(".", ",") : Math.round(v)) + " с";
+const dayShort = s => { const [, m, d] = String(s).split("-"); return `${d}.${m}`; };
+const hourShort = iso => new Date(iso).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+let period = Number(store.get("mayak.admin.period") || 30); if (![7, 30, 90].includes(period)) period = 30;
+function periodSeg(id) { return `<div class="seg" role="group" aria-label="Период" id="${id}">${[7, 30, 90].map(p => `<button type="button" data-p="${p}" aria-pressed="${p === period}">${p} дн</button>`).join("")}</div>`; }
+function bindPeriod(id, after) { const el = $("#" + id); if (el) el.querySelectorAll("button").forEach(b => b.onclick = () => { period = Number(b.dataset.p); store.set("mayak.admin.period", String(period)); after ? after() : render(); }); }
+const kpi = (value, label, sub = "") => `<div class="kpi"><b>${value}</b><span>${label}</span>${sub ? `<small>${sub}</small>` : ""}</div>`;
+// Столбики (с накоплением): points — [{…}], keys — какие поля складывать. Подпись оси — первая, середина, последняя точки.
+function chart(points, { keys, colors, names, fmt = gb, label, axis }) {
+  if (!points?.length) return "";
+  const totals = points.map(p => keys.reduce((s, k) => s + (p[k] || 0), 0));
+  const max = Math.max(0, ...totals);
+  if (!max) return `<p class="muted chart-empty">${esc(label)}: данных пока нет.</p>`;
+  const cols = points.map(p => `<div class="col" title="${esc(axis(p) + ": " + keys.map((k, j) => `${names[j]} ${fmt(p[k] || 0)}`).join(", "))}">${keys.map((k, j) => `<i style="height:${(100 * (p[k] || 0) / max).toFixed(2)}%;background:${colors[j]}"></i>`).join("")}</div>`).join("");
+  const n = points.length, mid = Math.floor((n - 1) / 2), sum = totals.reduce((a, b) => a + b, 0);
+  return `<div class="chart-wrap"><div class="chart-max">${esc(fmt(max))}</div>
+    <div class="chart" role="img" aria-label="${esc(label)}: максимум ${esc(fmt(max))}, всего ${esc(fmt(sum))}" style="grid-template-columns:repeat(${n},minmax(0,1fr))">${cols}</div>
+    <div class="chart-axis" aria-hidden="true"><span>${esc(axis(points[0]))}</span><span>${esc(axis(points[mid]))}</span><span>${esc(axis(points[n - 1]))}</span></div>
+    ${names.length > 1 ? `<div class="legend">${names.map((nm, j) => `<span><i style="background:${colors[j]}"></i>${esc(nm)}</span>`).join("")}</div>` : ""}</div>`;
+}
+const trafficChart = (points, label, axis) => chart(points, { keys: ["down", "up"], colors: [C_DOWN, C_UP], names: ["к пользователю", "от пользователя"], label, axis });
+const attemptState = { connected: ["ok", "подключено"], ended: ["ok", "завершено"], failed: ["bad", "не удалось"], pending: ["", "идёт"] };
+function rowButton(el, open) { el.setAttribute("role", "button"); el.tabIndex = 0; el.onclick = open; el.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } }; }
+
+// ───── Обзор ─────
+async function overview() {
+  const app = $("#app");
+  let s;
+  try { s = await api(`/api/admin/stats/overview?days=${period}`); }
+  catch (e) { if (e.status === 404) { app.innerHTML = `<div class="card"><h2>Обзор</h2><p class="muted">Статистика появится после обновления сервиса.</p></div>`; return; } throw e; }
+  const t = s.totals, a = s.attempts7d;
+  const series = s.series.map(p => ({ ...p, failed: p.attempts - p.proven }));
+  app.innerHTML = `<div class="dash">
+    <div class="row dash-head"><h2 class="grow">Обзор</h2>${periodSeg("per")}</div>
+    <div class="kpis">
+      ${kpi(num(t.accountsOnlineNow), "людей в сети сейчас", `${num(t.onlineNow)} устр. · на серверах ${num(t.peersNow)}`)}
+      ${kpi(num(t.activeToday), "пользовались сегодня", `за 7 дн ${num(t.active7d)} · за ${s.days} дн ${num(t.activeN)} из ${num(t.accountsEnabled)}`)}
+      ${kpi(gb(t.downToday + t.upToday), "трафик сегодня", `↓ ${gb(t.downToday)} · ↑ ${gb(t.upToday)}`)}
+      ${kpi(gb(t.down + t.up), `трафик за ${s.days} дн`, `↓ ${gb(t.down)} · ↑ ${gb(t.up)}`)}
+      ${kpi(pct(a.successPercent), "подключений успешно, 7 дн", `${num(a.proven)} из ${num(a.total)} · обычно за ${secs(a.medianSeconds)}`)}
+    </div>
+    ${s.attention.length ? `<div class="card"><h3>Требует внимания</h3><ul class="attn">${s.attention.map((x, i) => `<li class="${esc(x.level)}"><button type="button" class="linkish" data-i="${i}">${esc(x.text)}</button></li>`).join("")}</ul></div>` : ""}
+    <div class="card"><h3>Трафик по дням</h3>${trafficChart(s.series, "Трафик по дням", p => dayShort(p.day))}</div>
+    <div class="cols2">
+      <div class="card"><h3>Активные люди по дням</h3>${chart(s.series, { keys: ["accounts"], colors: [C_DOWN], names: ["людей"], fmt: num, label: "Активные люди по дням", axis: p => dayShort(p.day) })}</div>
+      <div class="card"><h3>Попытки подключения</h3>${chart(series, { keys: ["proven", "failed"], colors: ["var(--green)", "var(--red)"], names: ["успешные", "неудачные"], fmt: num, label: "Попытки подключения по дням", axis: p => dayShort(p.day) })}</div>
+    </div>
+    <div class="card"><h3>Серверы</h3><div class="table-wrap"><table><thead><tr><th>Сервер</th><th class="num">Сейчас</th><th class="num">Пик 24 ч</th><th class="num">Трафик 24 ч</th><th class="num">За ${s.days} дн</th><th class="num">Подключения 7 дн</th><th class="num">С Москвы 24 ч</th></tr></thead><tbody>
+      ${s.servers.map(x => `<tr class="clickable" data-s="${x.id}"><td><span class="dot ${x.reporting ? "on" : "off"}"></span> <b>${esc(x.city || x.name)}</b>${x.active ? ` <span class="chip">активный</span>` : ""}${x.autoSelectEnabled ? ` <span class="chip">автовыбор</span>` : ""}</td>
+        <td class="num">${num(x.peersNow)}<span class="muted"> / ${num(x.capacity)}</span></td><td class="num">${num(x.peak24h)}</td><td class="num">${gb(x.down24h + x.up24h)}</td><td class="num">${gb(x.down + x.up)}</td>
+        <td class="num">${pct(x.attempts7d.successPercent)}<span class="muted"> · ${num(x.attempts7d.total)}</span></td><td class="num">${x.tcpUptime24h == null ? "—" : pct(x.tcpUptime24h)}</td></tr>`).join("")}
+    </tbody></table></div></div>
+    <div class="cols2">
+      <div class="card"><h3>Больше всего трафика за ${s.days} дн</h3>${s.topAccounts.length ? `<div class="table-wrap"><table><tbody>${s.topAccounts.map(x => `<tr class="clickable" data-a="${x.accountId}"><td>${esc(x.name)}</td><td class="num">${gb(x.down + x.up)}</td><td class="num muted">${dur(x.onlineSeconds)}</td></tr>`).join("")}</tbody></table></div>` : `<p class="muted">Данных пока нет.</p>`}</div>
+      <div class="card"><h3>Устройства и версии</h3><div class="table-wrap"><table><thead><tr><th>Система</th><th>Версия</th><th class="num">Устройств</th><th class="num">Активны</th></tr></thead><tbody>${s.versions.map(v => `<tr><td>${esc(kinds[v.kind] || v.kind)}</td><td>${esc(v.version || "—")}</td><td class="num">${num(v.devices)}</td><td class="num">${num(v.active)}</td></tr>`).join("")}</tbody></table></div></div>
+    </div>
+    <p class="muted">История копится с ${s.historyFrom ? esc(dayShort(s.historyFrom)) : "момента обновления сервиса"}; сутки — по Москве. Трафик считается по AmneziaWG: путь Xray и нагрузка серверов появятся после обновления агента. «Активны» — был трафик или подключение за ${s.days} дн.</p>
+  </div>`;
+  bindPeriod("per");
+  app.querySelectorAll(".attn button").forEach(b => b.onclick = () => { const x = s.attention[+b.dataset.i]; go(x.kind === "server" ? "servers" : "people", x.id); });
+  app.querySelectorAll("tr[data-s]").forEach(r => rowButton(r, () => go("servers", r.dataset.s)));
+  app.querySelectorAll("tr[data-a]").forEach(r => rowButton(r, () => go("people", r.dataset.a)));
 }
 
 // ───── Люди ─────
+// Слева список, справа карточка выбранного человека: статистика, устройства, подключения, доступ.
+let peopleFilter = "all", peopleSort = store.get("mayak.admin.sort") || "activity";
 async function people() {
   const app = $("#app");
-  const [ov, list] = await Promise.all([api("/api/admin/overview"), api("/api/admin/accounts" + (people.q ? "?q=" + encodeURIComponent(people.q) : ""))]);
-  app.innerHTML = `<div class="card stats"><div><b>${ov.accounts}</b><span class="muted">людей</span></div><div><b>${ov.waiting}</b><span class="muted">ждут одобрения</span></div>
-      <div><b>${ov.devices}</b><span class="muted">устройств</span></div><div><b>${ov.online}</b><span class="muted">в сети</span></div></div>
-    <div class="card"><div class="row"><input class="grow" id="q" placeholder="Поиск по имени или @telegram" value="${esc(people.q || "")}"><button class="b p" id="add">+ Человек</button></div>
-      <div class="list" id="list" style="margin-top:8px"></div></div><div id="detail"></div>`;
+  const [list, sum] = await Promise.all([
+    api("/api/admin/accounts" + (people.q ? "?q=" + encodeURIComponent(people.q) : "")),
+    api("/api/admin/stats/accounts").catch(() => null)]);
+  const stat = new Map((sum || []).map(x => [x.accountId, x]));
+  const lastSeen = row => stat.get(row.account.id)?.lastSeen || row.devices.reduce((m, d) => d.lastHandshake > m ? d.lastHandshake : m, "") || null;
+  const isOnline = row => stat.get(row.account.id)?.online ?? row.devices.some(d => online(d.lastHandshake));
+  const traffic = row => { const x = stat.get(row.account.id); return x ? x.down30 + x.up30 : 0; };
+  const stale = row => { const l = lastSeen(row); return !l || Date.now() - new Date(l) > 30 * 86400e3; };
+  const filters = { all: ["Все", () => true], online: ["В сети", isOnline], stale: ["30+ дн без связи", stale], waiting: ["Ждут", r => !r.account.enabled] };
+  const shown = list.filter(filters[peopleFilter]?.[1] || (() => true)).sort(
+    peopleSort === "name" ? (x, y) => x.account.name.localeCompare(y.account.name, "ru")
+    : peopleSort === "traffic" ? (x, y) => traffic(y) - traffic(x)
+    : (x, y) => (isOnline(y) - isOnline(x)) || String(lastSeen(y) || "").localeCompare(String(lastSeen(x) || "")));
+  app.innerHTML = `<div class="split${selected ? " has-sel" : ""}">
+    <aside class="pane-list" aria-label="Список людей"><div class="card">
+      <div class="row"><h2 class="grow">Люди <span class="count">${list.length}</span></h2><button class="b p" id="add">+ Человек</button></div>
+      <input id="q" type="search" placeholder="Имя, @telegram или почта" aria-label="Поиск по людям" value="${esc(people.q || "")}">
+      <div class="row filters"><div class="seg wrap" role="group" aria-label="Фильтр">${Object.entries(filters).map(([k, [t, f]]) => `<button type="button" data-f="${k}" aria-pressed="${k === peopleFilter}">${t} <span>${list.filter(f).length}</span></button>`).join("")}</div>
+        <select id="sort" aria-label="Порядок"><option value="activity">по активности</option><option value="name">по имени</option><option value="traffic">по трафику</option></select></div>
+      <div class="list" id="list"></div></div></aside>
+    <section class="pane-detail" id="detail"><div class="card empty"><p class="muted">Выберите человека слева: здесь будут его статистика, устройства, подключения и настройки доступа.</p></div></section></div>`;
   $("#q").onchange = e => { people.q = e.target.value; render(); };
+  $("#sort").value = peopleSort;
+  $("#sort").onchange = e => { peopleSort = e.target.value; store.set("mayak.admin.sort", peopleSort); render(); };
+  app.querySelectorAll("[data-f]").forEach(b => b.onclick = () => { peopleFilter = b.dataset.f; render(); });
   $("#add").onclick = async () => { const name = prompt("Имя (например, «Мама»):"); if (!name) return; const a = await api("/api/admin/accounts", { method: "POST", body: { name } }); selected = a.id; render(); };
   const box = $("#list");
-  if (!list.length) box.innerHTML = `<p class="muted">Пока никого. Людей добавит вход через бота, перенос с сервера или кнопка «+ Человек».</p>`;
-  for (const row of list) {
-    const a = row.account, on = row.devices.some(d => online(d.lastHandshake));
+  if (!shown.length) box.innerHTML = list.length ? `<p class="muted">Под фильтр никто не подходит.</p>` : `<p class="muted">Пока никого. Нажмите «+ Человек».</p>`;
+  for (const row of shown) {
+    const a = row.account, st = stat.get(a.id), on = isOnline(row);
     const el = document.createElement("div");
-    el.innerHTML = `<span class="dot ${on ? "on" : ""}"></span><div class="grow"><b>${esc(a.name)}</b> ${a.telegram ? `<span class="muted">@${esc(a.telegram)}</span>` : ""}
-      <div class="muted">${row.devices.length} устр. · ${a.active ? esc(day(a.paidUntil)) : (a.enabled ? "подписка истекла" : "ждёт одобрения")}</div></div>
-      ${!a.enabled ? `<span class="chip wait">ждёт</span>` : ""}${a.role !== "user" ? `<span class="chip">${esc(a.role)}</span>` : ""}`;
-    el.onclick = () => { selected = a.id; showPerson(row); };
+    el.dataset.id = a.id;
+    el.innerHTML = `<span class="dot ${on ? "on" : ""}" aria-hidden="true"></span><div class="grow"><b>${esc(a.name)}</b> ${a.telegram ? `<span class="muted">@${esc(a.telegram)}</span>` : ""}
+      <div class="muted">${row.devices.length} устр.${st ? ` · ${gb(st.down30 + st.up30)} за 30 дн` : ""} · ${on ? "в сети" : esc(ago(lastSeen(row)))}</div></div>
+      ${!a.enabled ? `<span class="chip wait">ждёт</span>` : !a.active ? `<span class="chip wait">срок истёк</span>` : ""}${st?.failed24h >= 3 && st.failed24h === st.attempts24h ? `<span class="chip bad" title="За сутки ни одной успешной попытки">не подключается</span>` : ""}${a.role !== "user" ? `<span class="chip">${esc(a.role)}</span>` : ""}`;
+    rowButton(el, () => { selected = a.id; box.querySelectorAll(".sel").forEach(x => { x.classList.remove("sel"); x.removeAttribute("aria-current"); }); el.classList.add("sel"); el.setAttribute("aria-current", "true"); showPerson(row); });
     box.appendChild(el);
-    if (selected === a.id) showPerson(row);
+    if (selected === a.id) { el.classList.add("sel"); el.setAttribute("aria-current", "true"); showPerson(row, true); }
   }
+  if (selected && !list.some(r => r.account.id === selected)) selected = null;
 }
 
-function showPerson(row) {
+async function showPerson(row, initial = false) {
   const a = row.account, d = $("#detail");
-  d.innerHTML = `<div class="card"><div class="row"><h2 class="grow">${esc(a.name)}</h2>
+  $(".split")?.classList.add("has-sel");
+  d.innerHTML = `<div class="card"><div class="row person-head"><button type="button" class="b back" id="back">← Все люди</button><h2 class="grow">${esc(a.name)}</h2>
       ${!a.enabled ? `<button class="b p" id="approve">Одобрить</button>` : `<button class="b" id="pause">Приостановить</button>`}
-      <button class="b d" id="del">Удалить</button></div>
-    <div class="grid2">
-      <div><label>Имя</label><input id="name" value="${esc(a.name)}" style="width:100%"></div>
-      <div><label>Оплачено до (пусто — без срока)</label><input type="date" id="until" value="${a.paidUntil ? a.paidUntil.slice(0, 10) : ""}" style="width:100%"></div>
-      <div><label>Устройств максимум</label><input type="number" id="max" min="0" value="${a.maxDevices}" style="width:100%"></div>
-      <div><label>Скорость, Мбит/с: приём / отдача (0 — без лимита)</label><div class="row"><input type="number" id="down" min="0" value="${a.downMbps}" style="width:45%"><input type="number" id="up" min="0" value="${a.upMbps}" style="width:45%"></div></div>
-      <div><label>Заметка</label><input id="note" value="${esc(row.note || "")}" style="width:100%"></div>
-      ${me.role === "owner" ? `<div><label>Роль</label><select id="role" style="width:100%">${["user", "support", "admin", "owner"].map(r => `<option ${r === a.role ? "selected" : ""}>${r}</option>`).join("")}</select></div>` : ""}
-    </div>
-    <div class="row" style="margin-top:12px"><button class="b p" id="save">Сохранить</button><button class="b" id="invite" ${a.enabled && a.active ? "" : "disabled"}>Выдать приглашение</button>${row.legacy ? `<span class="muted">перенесён из Маяка для Windows</span>` : ""}</div>
-    ${a.enabled && a.active ? `<p class="muted" style="margin-top:8px">Новый код заменит предыдущий неиспользованный. Передайте приглашение для регистрации в кабинете по email и паролю или для входа в приложении Маяк на Android/Windows.</p>` : `<p class="muted" role="status" style="margin-top:8px">Сначала включите аккаунт и убедитесь, что доступ действует. Приглашение само по себе доступ не включает.</p>`}
-    <div id="inviteOut"></div></div>
-    <div class="card"><div class="row"><h2 class="grow">Устройства</h2><select id="kind">${Object.entries(kinds).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select><button class="b" id="adddev">+ Устройство</button></div>
-    <table><tr><th></th><th>Устройство</th><th class="hide">IP</th><th class="hide">Трафик</th><th>Был в сети</th><th></th></tr>
-    ${row.devices.map(x => `<tr data-id="${x.id}"><td><span class="dot ${!x.enabled ? "off" : online(x.lastHandshake) ? "on" : ""}"></span></td>
-      <td>${esc(x.name)}<div class="muted">${esc(kinds[x.kind] || x.kind)}</div></td><td class="hide">${esc(x.ip)}</td><td class="hide">${bytes(x.rxBytes + x.txBytes)}</td><td>${when(x.lastHandshake)}</td>
-      <td class="row">${x.canExport ? `<button class="b" data-a="files">Файл</button>` : ""}<button class="b" data-a="toggle">${x.enabled ? "Выкл." : "Вкл."}</button><button class="b d" data-a="del">✕</button></td></tr>`).join("")}
-    </table>${row.devices.length ? "" : `<p class="muted">Устройств нет. Из приложения «Маяк» человек добавит их сам, а своим людям можно выдать файл кнопкой «+ Устройство».</p>`}<div id="files"></div></div>`;
+      ${rank(me.role) >= 2 ? `<button class="b d" id="del">Удалить</button>` : ""}</div>
+    <p class="muted meta">${a.enabled ? (a.active ? "доступ включён" : "срок доступа истёк") : "ждёт одобрения"} · ${a.paidUntil ? "до " + esc(day(a.paidUntil)) : "без срока"} ·${row.devices.length} из ${a.maxDevices} устр.${a.role !== "user" ? " · " + esc(a.role) : ""}${a.telegram ? " · @" + esc(a.telegram) : ""}${row.legacy ? " · перенесён из Маяка для Windows" : ""}</p>
+    <div class="kpis" id="pstats" aria-live="polite"><div class="kpi skeleton"><b>…</b><span>загрузка статистики</span></div></div></div>
+    <div class="card"><div class="row"><h3 class="grow">Трафик</h3>${periodSeg("pper")}</div><div id="pchart"></div><div id="pservers" class="muted"></div>
+      <h3 class="sub">Последние 48 часов</h3><div id="phour"></div></div>
+    <div class="card"><div class="row"><h3 class="grow">Устройства</h3><select id="kind" aria-label="Тип нового устройства">${Object.entries(kinds).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select><button class="b" id="adddev">+ Устройство</button></div>
+      <div class="table-wrap" id="pdevices"></div>${row.devices.length ? "" : `<p class="muted">Устройств нет. Из приложения «Маяк» человек добавит их сам, а своим людям можно выдать файл кнопкой «+ Устройство».</p>`}<div id="files"></div></div>
+    <div class="card"><h3>Подключения</h3><div id="precent"><p class="muted">Загрузка…</p></div></div>
+    <div class="card"><h3>Доступ</h3>
+      <div class="grid2">
+        <div><label for="name">Имя</label><input id="name" value="${esc(a.name)}"></div>
+        <div><label for="until">Оплачено до (пусто — без срока)</label><input type="date" id="until" value="${a.paidUntil ? a.paidUntil.slice(0, 10) : ""}"></div>
+        <div><label for="max">Устройств максимум</label><input type="number" id="max" min="0" value="${a.maxDevices}"></div>
+        <div><label for="down">Скорость, Мбит/с: приём / отдача (0 — без лимита)</label><div class="row"><input type="number" id="down" min="0" value="${a.downMbps}" aria-label="Приём, Мбит/с"><input type="number" id="up" min="0" value="${a.upMbps}" aria-label="Отдача, Мбит/с"></div></div>
+        <div><label for="note">Заметка</label><input id="note" value="${esc(row.note || "")}"></div>
+        ${me.role === "owner" ? `<div><label for="role">Роль</label><select id="role">${["user", "support", "admin", "owner"].map(r => `<option ${r === a.role ? "selected" : ""}>${r}</option>`).join("")}</select></div>` : ""}
+      </div>
+      <div class="row" style="margin-top:16px"><button class="b p" id="save">Сохранить</button><button class="b" id="invite" ${a.enabled && a.active ? "" : "disabled"}>Выдать приглашение</button></div>
+      ${a.enabled && a.active ? `<p class="muted" style="margin-top:8px">Новый код заменит предыдущий неиспользованный. Приглашение — для регистрации в кабинете по почте и паролю или для входа в приложении Маяк.</p>` : `<p class="muted" role="status" style="margin-top:8px">Сначала включите аккаунт и убедитесь, что доступ действует. Приглашение само по себе доступ не включает.</p>`}
+      <div id="inviteOut"></div></div>`;
+  const devicesTable = (stats = new Map()) => `<table><thead><tr><th></th><th>Устройство</th><th>Сервер</th><th class="num">${period} дн</th><th class="num">В сети 7 дн</th><th>Связь</th><th></th></tr></thead><tbody>
+    ${row.devices.map(x => { const s = stats.get(x.id); return `<tr data-id="${x.id}"><td><span class="dot ${!x.enabled ? "off" : online(x.lastHandshake) ? "on" : ""}" title="${!x.enabled ? "выключено" : online(x.lastHandshake) ? "в сети" : "не в сети"}"></span></td>
+      <td class="dev"${s?.osVersion ? ` title="${esc(s.osVersion)}"` : ""}>${esc(x.name)}<div class="muted">${esc(kinds[x.kind] || x.kind)}${s?.appVersion ? " · " + esc(s.appVersion) : ""}</div></td>
+      <td>${esc(s?.server || "—")}</td><td class="num">${s ? gb(s.down + s.up) : "—"}</td><td class="num">${s ? dur(s.online7dSeconds) : "—"}</td><td>${online(x.lastHandshake) ? "сейчас" : esc(ago(x.lastHandshake))}</td>
+      <td class="row">${x.canExport ? `<button class="b" data-a="files">Файл</button>` : ""}<button class="b" data-a="toggle">${x.enabled ? "Выкл." : "Вкл."}</button><button class="b d" data-a="del" aria-label="Удалить устройство ${esc(x.name)}">✕</button></td></tr>`; }).join("")}</tbody></table>`;
+  const bindDevices = () => d.querySelectorAll("tr[data-id] button").forEach(b => b.onclick = async () => {
+    const id = b.closest("tr").dataset.id, x = row.devices.find(v => v.id === id);
+    try {
+      if (b.dataset.a === "files") showFiles(a, x, await api(`/api/admin/devices/${id}/files`));
+      if (b.dataset.a === "toggle") { await api(`/api/admin/devices/${id}`, { method: "PATCH", body: { enabled: !x.enabled } }); render(); }
+      if (b.dataset.a === "del" && confirm(`Удалить «${x.name}»? Доступ на нём пропадёт.`)) { await api(`/api/admin/devices/${id}`, { method: "DELETE" }); render(); }
+    } catch (e) { toast(e.message); }
+  });
+  if (row.devices.length) { $("#pdevices").innerHTML = devicesTable(); bindDevices(); }
+  $("#back").onclick = () => { selected = null; render(); };
   const patch = body => api(`/api/admin/accounts/${a.id}`, { method: "PATCH", body }).then(() => { toast("Сохранено"); render(); }).catch(e => toast(e.message));
   if ($("#approve")) $("#approve").onclick = () => patch({ enabled: true });
   if ($("#pause")) $("#pause").onclick = () => confirm(`Приостановить доступ для «${a.name}»?`) && patch({ enabled: false });
-  $("#del").onclick = () => confirm(`Удалить «${a.name}» со всеми устройствами?`) && api(`/api/admin/accounts/${a.id}`, { method: "DELETE" }).then(() => { selected = null; render(); }).catch(e => toast(e.message));
+  if ($("#del")) $("#del").onclick = () => confirm(`Удалить «${a.name}» со всеми устройствами и историей?`) && api(`/api/admin/accounts/${a.id}`, { method: "DELETE" }).then(() => { selected = null; render(); }).catch(e => toast(e.message));
   $("#save").onclick = () => {
     const until = $("#until").value;
     const body = { name: $("#name").value, note: $("#note").value, maxDevices: +$("#max").value, downMbps: +$("#down").value, upMbps: +$("#up").value };
@@ -269,15 +462,28 @@ function showPerson(row) {
     try { const r = await api(`/api/admin/accounts/${a.id}/devices`, { method: "POST", body: { name, kind } }); showFiles(a, { name, kind }, r); toast("Устройство добавлено"); }
     catch (e) { toast(e.message); }
   };
-  d.querySelectorAll("tr[data-id] button").forEach(b => b.onclick = async () => {
-    const id = b.closest("tr").dataset.id, x = row.devices.find(v => v.id === id);
-    try {
-      if (b.dataset.a === "files") showFiles(a, x, await api(`/api/admin/devices/${id}/files`));
-      if (b.dataset.a === "toggle") { await api(`/api/admin/devices/${id}`, { method: "PATCH", body: { enabled: !x.enabled } }); render(); }
-      if (b.dataset.a === "del" && confirm(`Удалить «${x.name}»? Доступ на нём пропадёт.`)) { await api(`/api/admin/devices/${id}`, { method: "DELETE" }); render(); }
-    } catch (e) { toast(e.message); }
-  });
-  d.scrollIntoView({ behavior: "smooth", block: "start" });
+  bindPeriod("pper", () => showPerson(row));
+  if (!initial && window.matchMedia("(max-width: 1099px)").matches) window.scrollTo({ top: 0 });
+
+  // Статистика подгружается отдельно: карточка и действия доступны сразу.
+  let s;
+  try { s = await api(`/api/admin/stats/accounts/${a.id}?days=${period}`); }
+  catch (e) { if (selected === a.id) { $("#pstats").innerHTML = `<p class="muted">Статистика недоступна${e.status === 404 ? ": появится после обновления сервиса" : ""}.</p>`; $("#precent").innerHTML = ""; } return; }
+  if (selected !== a.id || !$("#pstats")) return;
+  const t = s.totals, at = s.attempts7d, onNow = s.devices.filter(x => x.online).length;
+  $("#pstats").innerHTML = kpi(onNow ? `${onNow} устр.` : "нет", "сейчас в сети", onNow ? "" : "был " + esc(ago(s.devices[0]?.lastHandshake)))
+    + kpi(gb(t.down + t.up), `трафик за ${s.days} дн`, `↓ ${gb(t.down)} · ↑ ${gb(t.up)}`)
+    + kpi(dur(t.online7dSeconds), "в сети за 7 дн", `активных дней ${t.activeDays} из ${s.days}`)
+    + kpi(pct(at.successPercent), "подключений успешно, 7 дн", at.total ? `${at.proven} из ${at.total} · обычно за ${secs(at.medianSeconds)}` : "попыток не было");
+  $("#pchart").innerHTML = trafficChart(s.series, "Трафик по дням", p => dayShort(p.day));
+  $("#phour").innerHTML = trafficChart(s.hourly, "Трафик по часам", p => hourShort(p.at));
+  $("#pservers").textContent = s.servers.length ? "По серверам: " + s.servers.map(x => `${x.name} ${gb(x.down + x.up)}`).join(" · ") : "";
+  if (row.devices.length) { $("#pdevices").innerHTML = devicesTable(new Map(s.devices.map(x => [x.id, x]))); bindDevices(); }
+  const moreRecent = () => { const b = $("#moreRecent"); if (b) b.onclick = () => { $("#precent").querySelectorAll("tr.more").forEach(r => r.hidden = false); b.remove(); }; };
+  setTimeout(moreRecent);
+  $("#precent").innerHTML = s.recent.length ? `<div class="table-wrap"><table><thead><tr><th>Когда</th><th>Устройство</th><th>Сервер</th><th>Итог</th><th class="num">За сколько</th><th class="num">Длительность</th></tr></thead><tbody>
+    ${s.recent.map((r, i) => { const [cls, txt] = attemptState[r.state] || ["", r.state]; return `<tr${i >= 10 ? ' class="more" hidden' : ""}><td class="nowrap">${esc(when(r.at))}</td><td>${esc(r.device)}</td><td>${esc(r.server)}</td><td><span class="chip ${cls}">${txt}</span></td><td class="num">${secs(r.connectSeconds)}</td><td class="num">${r.durationSeconds == null ? "—" : dur(r.durationSeconds)}</td></tr>`; }).join("")}
+    </tbody></table></div>${s.recent.length > 10 ? `<button type="button" class="b" id="moreRecent" style="margin-top:10px">Показать ещё ${s.recent.length - 10}</button>` : ""}<p class="muted">Попытки приложения Маяк за ${s.days} дн, последние 30. Устройства с файлом .conf/.vpn попыток не отправляют.</p>` : `<p class="muted">За ${s.days} дн попыток подключения из приложения не было.</p>`;
 }
 
 function showFiles(a, dev, f) {
@@ -338,34 +544,45 @@ function probeHistory(id) {
     <p class="muted">Проверка из дата-центра в Москве: показывает, что сервер жив и путь из России открыт. Блокировки у мобильных и домашних провайдеров могут отличаться.</p></div>`;
 }
 
+let serverSummary = new Map();
 async function servers() {
   const app = $("#app");
-  const [list, probes] = await Promise.all([api("/api/admin/servers"), api("/api/admin/probes?hours=24").catch(() => null)]);
+  const [list, probes, ov] = await Promise.all([api("/api/admin/servers"), api("/api/admin/probes?hours=24").catch(() => null), api(`/api/admin/stats/overview?days=${period}`).catch(() => null)]);
   probeData = probes;
+  serverSummary = new Map((ov?.servers || []).map(x => [x.id, x]));
   const exits = list.filter(s => s.role === "exit");
-  app.innerHTML = `<div class="card"><div class="row"><h2 class="grow">Серверы</h2><button class="b" id="probeAll" type="button">Проверить серверы</button>${rank(me.role) >= 2 ? `<button class="b p" id="addBlank">Добавить сервер</button>` : ""}</div>
-    <div class="list" id="list"></div></div><div id="detail"></div>`;
-  if ($("#addBlank")) $("#addBlank").onclick = () => blankServerForm();
+  if (selectedServer && !list.some(s => s.id === selectedServer)) selectedServer = null;
+  app.innerHTML = `<div class="split${selectedServer ? " has-sel" : ""}">
+    <aside class="pane-list" aria-label="Список серверов"><div class="card">
+      <div class="row"><h2 class="grow">Серверы <span class="count">${list.length}</span></h2></div>
+      <div class="row"><button class="b" id="probeAll" type="button">Проверить серверы</button>${rank(me.role) >= 2 ? `<button class="b p" id="addBlank">Добавить сервер</button>` : ""}</div>
+      <div class="list" id="list"></div></div></aside>
+    <section class="pane-detail" id="detail"><div class="card empty"><p class="muted">Выберите сервер слева: здесь будут его нагрузка, трафик, подключённые люди, доступность с Москвы и настройки.</p></div></section></div>`;
+  if ($("#addBlank")) $("#addBlank").onclick = () => { selectedServer = null; $("#list").querySelectorAll(".sel").forEach(x => x.classList.remove("sel")); blankServerForm(); };
   $("#probeAll").onclick = () => runProbes(null, $("#probeAll"));
   const box = $("#list");
   if (!list.length) box.innerHTML = `<p class="muted">Серверов нет. Нажмите «Добавить сервер»: Маяк сам установит VPN по адресу и паролю SSH.</p>`;
   for (const s of list) {
     const el = document.createElement("div");
     const target = s.targetExitId ? exits.find(e => e.id === s.targetExitId)?.name : null;
-    el.innerHTML = `<span class="dot ${s.lastError ? "warn" : s.online ? "on" : "off"}"></span><div class="grow"><b>${esc(s.name)}</b> <span class="muted">${esc(s.host)}</span>
-      <div class="muted">${s.role === "exit" ? "выход" + (s.active ? " · активный" : "") : "вход" + (target ? " → " + esc(target) : " · не пересылает")}${s.report?.dryRun ? " · <b>пробный режим</b>" : ""} · ${s.lastSeen ? "связь " + when(s.lastSeen) : "агент не выходил на связь"}${s.provisioningStatus ? " · установка: " + esc(s.provisioningStatus) : ""}</div>
-      ${s.provisioningMessage ? `<div class="muted">${esc(s.provisioningMessage)}</div>` : ""}
-      ${s.lastError ? `<div class="err" style="font-size:12.5px">${esc(s.lastError)}</div>` : ""}${probeChips(s.id)}</div>`;
-    el.onclick = async () => {
+    const sum = serverSummary.get(s.id);
+    el.innerHTML = `<span class="dot ${s.lastError ? "warn" : s.online ? "on" : "off"}" aria-hidden="true"></span><div class="grow"><b>${esc(s.name)}</b> <span class="muted">${esc(s.host)}</span>
+      <div class="muted">${s.role === "exit" ? "выход" + (s.active ? " · активный" : "") : "вход" + (target ? " → " + esc(target) : " · не пересылает")}${s.report?.dryRun ? " · <b>пробный режим</b>" : ""} · ${s.lastSeen ? "связь " + esc(ago(s.lastSeen)) : "агент не выходил на связь"}</div>
+      ${sum ? `<div class="muted">сейчас ${num(sum.peersNow)} · за 24 ч ${gb(sum.down24h + sum.up24h)}</div>` : ""}
+      ${s.lastError ? `<div class="err">${esc(s.lastError)}</div>` : ""}${probeChips(s.id)}</div>`;
+    const open = async () => {
       clearProvisionSecrets();
       selectedServer = s.id;
+      box.querySelectorAll(".sel").forEach(x => { x.classList.remove("sel"); x.removeAttribute("aria-current"); });
+      el.classList.add("sel"); el.setAttribute("aria-current", "true");
       if (s.provisioningStatus) {
         try { serverDetail({ ...s, ...(await api(`/api/admin/provision/jobs/${s.id}`)) }, exits); }
         catch (e) { toast(e.message); serverDetail(s, exits); }
       } else serverDetail(s, exits);
     };
+    rowButton(el, open);
     box.appendChild(el);
-    if (selectedServer === s.id) el.onclick();
+    if (selectedServer === s.id) open();
   }
 }
 
@@ -692,21 +909,30 @@ function reportBox(s) {
 
 function serverDetail(s, exits) {
   const canActivate = !s.provisioningStatus || s.provisioningReady === true;
-  $("#detail").innerHTML = `<div class="card"><div class="row"><h2 class="grow">${esc(s.name)}</h2>
+  $(".split")?.classList.add("has-sel");
+  $("#detail").innerHTML = `<div class="card"><div class="row person-head"><button type="button" class="b back" id="back">← Все серверы</button><h2 class="grow">${esc(s.name)}</h2>
       ${s.role === "exit" && !s.active && canActivate ? `<button class="b p" id="act">Сделать активным</button>` : ""}
       ${rank(me.role) >= 2 ? `<button class="b" id="tok">Новая команда установки</button><button class="b d" id="del">Удалить</button>` : ""}</div>
-    <div class="grid2">
-      <div><label>Название</label><input id="name" value="${esc(s.name)}" style="width:100%"></div>
-      <div><label>Адрес</label><input id="host" value="${esc(s.host)}" style="width:100%"></div>
-      <div><label>Город · страна</label><div class="row"><input id="city" value="${esc(s.city)}" style="width:48%"><input id="country" value="${esc(s.country)}" style="width:48%"></div></div>
-      <div><label>Чем знаменит (для карточки в приложении)</label><input id="fact" value="${esc(s.fact)}" style="width:100%"></div>
-      ${s.role === "exit" && rank(me.role) >= 2 ? `<div><label>Автовыбор в приложении</label><select id="autosel" style="width:100%"><option value="0">выключен</option><option value="1" ${s.autoSelectEnabled ? "selected" : ""}>включён</option></select></div>
-      <div><label>Адрес выхода в интернет (IPv4, через запятую)</label><input id="egress" value="${esc((s.expectedEgressIps || []).join(", "))}" placeholder="${esc(s.host)}" style="width:100%"></div>` : ""}
-      ${s.role === "entry" ? `<div><label>Пересылать на выход</label><select id="target" style="width:100%"><option value="">— не пересылать —</option>${exits.map(e => `<option value="${e.id}" ${e.id === s.targetExitId ? "selected" : ""}>${esc(e.name)} (${esc(e.host)})</option>`).join("")}</select></div>` : ""}
-    </div><div class="row" style="margin-top:12px"><button class="b p" id="save">Сохранить</button><span class="muted">агент ${esc(s.agentVersion || "—")}</span></div>
-    ${s.provisioningStatus ? `<p class="muted" role="status">Установка: ${esc(s.provisioningStatus)}. ${esc(s.provisioningMessage || "")}${!canActivate ? " Сервер останется неактивным до подтверждения identity и синхронизации." : ""}</p>` : ""}
-    ${probeHistory(s.id)}${reportBox(s)}<div id="out"></div></div>`;
+    <p class="muted meta">${esc(s.host)}${s.city ? " · " + esc(s.city) : ""}${s.country ? ", " + esc(s.country) : ""} · ${s.role === "exit" ? "выход" + (s.active ? ", активный" : "") + (s.autoSelectEnabled ? ", автовыбор" : "") : "вход"} · агент ${esc(s.agentVersion || "—")} · ${s.lastSeen ? "связь " + esc(ago(s.lastSeen)) : "агент не выходил на связь"}</p>
+    ${s.provisioningStatus && s.provisioningStatus !== "installed" ? `<p class="muted" role="status">Установка: ${esc(s.provisioningStatus)}. ${esc(s.provisioningMessage || "")}${!canActivate ? " Сервер останется неактивным до подтверждения identity и синхронизации." : ""}</p>` : ""}
+    <div class="kpis" id="sstats" aria-live="polite">${s.role === "exit" ? `<div class="kpi skeleton"><b>…</b><span>загрузка статистики</span></div>` : ""}</div></div>
+    ${s.role === "exit" ? `<div class="card"><h3>Последние 48 часов</h3><div id="shour"></div><div id="speers"></div></div>
+    <div class="card"><div class="row"><h3 class="grow">По дням</h3>${periodSeg("sper")}</div><div id="sdaily"></div><div id="sdevices"></div></div>
+    <div class="cols2"><div class="card"><h3>Подключены сейчас</h3><div id="snow"><p class="muted">Загрузка…</p></div></div>
+      <div class="card"><h3>Больше всего трафика</h3><div id="stop"></div></div></div>` : ""}
+    <div class="card">${probeHistory(s.id) || `<p class="muted">Проверки доступности недоступны.</p>`}</div>
+    <div class="card"><h3>Настройки</h3><div class="grid2">
+      <div><label for="name">Название</label><input id="name" value="${esc(s.name)}"></div>
+      <div><label for="host">Адрес</label><input id="host" value="${esc(s.host)}"></div>
+      <div><label for="city">Город · страна</label><div class="row"><input id="city" value="${esc(s.city)}" aria-label="Город"><input id="country" value="${esc(s.country)}" aria-label="Страна"></div></div>
+      <div><label for="fact">Чем знаменит (для карточки в приложении)</label><input id="fact" value="${esc(s.fact)}"></div>
+      ${s.role === "exit" && rank(me.role) >= 2 ? `<div><label for="autosel">Автовыбор в приложении</label><select id="autosel"><option value="0">выключен</option><option value="1" ${s.autoSelectEnabled ? "selected" : ""}>включён</option></select></div>
+      <div><label for="egress">Адрес выхода в интернет (IPv4, через запятую)</label><input id="egress" value="${esc((s.expectedEgressIps || []).join(", "))}" placeholder="${esc(s.host)}"></div>` : ""}
+      ${s.role === "entry" ? `<div><label for="target">Пересылать на выход</label><select id="target"><option value="">— не пересылать —</option>${exits.map(e => `<option value="${e.id}" ${e.id === s.targetExitId ? "selected" : ""}>${esc(e.name)} (${esc(e.host)})</option>`).join("")}</select></div>` : ""}
+    </div><div class="row" style="margin-top:16px"><button class="b p" id="save">Сохранить</button></div>
+    ${reportBox(s)}<div id="out"></div></div>`;
   const patch = body => api(`/api/admin/servers/${s.id}`, { method: "PATCH", body }).then(() => { toast("Сохранено"); render(); }).catch(e => toast(e.message));
+  $("#back").onclick = () => { selectedServer = null; render(); };
   $("#save").onclick = () => {
     const body = { name: $("#name").value, host: $("#host").value, city: $("#city").value, country: $("#country").value, fact: $("#fact").value };
     if ($("#target")) { if ($("#target").value) body.targetExitId = $("#target").value; else body.clearTarget = true; }
@@ -722,7 +948,30 @@ function serverDetail(s, exits) {
   if ($("#act")) $("#act").onclick = () => confirm("Перевести трафик на этот выход? Входы переключатся на него.") && patch({ active: true });
   if ($("#probeOne")) $("#probeOne").onclick = () => runProbes(s.id, $("#probeOne"));
   if ($("#tok")) $("#tok").onclick = async () => { if (!confirm("Старый токен агента перестанет работать. Продолжить?")) return; const r = await api(`/api/admin/servers/${s.id}/token`, { method: "POST" }); installBox(r.install, r.installDryRun); };
-  if ($("#del")) $("#del").onclick = () => confirm(`Удалить «${s.name}» из списка? На самом сервере VPN продолжит работать.`) && api(`/api/admin/servers/${s.id}`, { method: "DELETE" }).then(render);
+  if ($("#del")) $("#del").onclick = () => confirm(`Удалить «${s.name}» из списка? На самом сервере VPN продолжит работать.`) && api(`/api/admin/servers/${s.id}`, { method: "DELETE" }).then(() => { selectedServer = null; render(); });
+  if (s.role === "exit") serverStats(s);
+}
+
+async function serverStats(s) {
+  bindPeriod("sper", () => serverStats(s));
+  const pressed = $("#sper"); if (pressed) pressed.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(Number(b.dataset.p) === period)));
+  let x;
+  try { x = await api(`/api/admin/stats/servers/${s.id}?days=${period}`); }
+  catch (e) { if (selectedServer === s.id && $("#sstats")) { $("#sstats").innerHTML = `<p class="muted">Статистика недоступна${e.status === 404 ? ": появится после обновления сервиса" : ""}.</p>`; $("#snow").innerHTML = ""; } return; }
+  if (selectedServer !== s.id || !$("#sstats")) return;
+  const sum = serverSummary.get(s.id), h = x.hourly, a = x.attempts7d;
+  const last24 = h.slice(-24), peak24 = Math.max(0, ...last24.map(p => p.peak)), traffic24 = last24.reduce((t, p) => t + p.down + p.up, 0);
+  $("#sstats").innerHTML = kpi(`${num(x.now.length)}<small class="of"> / ${num(x.capacity)}</small>`, "подключено сейчас", `пик за 24 ч ${num(peak24)}`)
+    + kpi(gb(traffic24), "трафик за 24 ч", `за ${x.days} дн ${gb(x.totals.down + x.totals.up)}`)
+    + kpi(pct(a.successPercent), "подключений успешно, 7 дн", a.total ? `${a.proven} из ${a.total} · обычно за ${secs(a.medianSeconds)}` : "попыток не было")
+    + kpi(sum?.tcpUptime24h == null ? "—" : pct(sum.tcpUptime24h), "порт доступен с Москвы", "за 24 ч");
+  $("#shour").innerHTML = trafficChart(h, "Трафик по часам", p => hourShort(p.at));
+  $("#speers").innerHTML = `<h3 class="sub">Подключённых по часам (пик)</h3>` + chart(h, { keys: ["peak"], colors: [C_UP], names: ["подключено"], fmt: num, label: "Пик подключённых по часам", axis: p => hourShort(p.at) });
+  $("#sdaily").innerHTML = trafficChart(x.series, "Трафик по дням", p => dayShort(p.day));
+  $("#sdevices").innerHTML = `<h3 class="sub">Активные устройства по дням</h3>` + chart(x.series, { keys: ["devices"], colors: [C_UP], names: ["устройств"], fmt: num, label: "Активные устройства по дням", axis: p => dayShort(p.day) });
+  $("#snow").innerHTML = x.now.length ? `<ul class="plain">${x.now.map(p => `<li>${p.accountId ? `<button type="button" class="linkish" data-a="${p.accountId}">${esc(p.account)}</button>` : esc(p.account)}${p.device ? ` <span class="muted">· ${esc(p.device)}</span>` : ""} <span class="muted">· ${esc(ago(p.lastHandshake))}</span></li>`).join("")}</ul>` : `<p class="muted">Сейчас никто не подключён.</p>`;
+  $("#stop").innerHTML = x.top.length ? `<div class="table-wrap"><table><tbody>${x.top.map(t => `<tr${t.accountId ? ` class="clickable" data-a="${t.accountId}"` : ""}><td>${esc(t.account)}<div class="muted">${esc(t.device)}</div></td><td class="num">${gb(t.down + t.up)}</td><td class="num muted">${dur(t.onlineSeconds)}</td></tr>`).join("")}</tbody></table></div><p class="muted">За ${x.days} дн.</p>` : `<p class="muted">Данных пока нет.</p>`;
+  $("#detail").querySelectorAll("[data-a]").forEach(el => el.tagName === "TR" ? rowButton(el, () => go("people", el.dataset.a)) : el.onclick = () => go("people", el.dataset.a));
 }
 
 // ───── Настройки ─────

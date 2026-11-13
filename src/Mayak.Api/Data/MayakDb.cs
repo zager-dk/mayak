@@ -17,6 +17,9 @@ public sealed class MayakDb : DbContext
     public DbSet<Invite> Invites => Set<Invite>();
     public DbSet<AwgAllocation> AwgAllocations => Set<AwgAllocation>();
     public DbSet<ServerProbe> ServerProbes => Set<ServerProbe>();
+    public DbSet<PeerCounter> PeerCounters => Set<PeerCounter>();
+    public DbSet<DeviceUsage> DeviceUsage => Set<DeviceUsage>();
+    public DbSet<ServerUsage> ServerUsage => Set<ServerUsage>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -67,6 +70,26 @@ public sealed class MayakDb : DbContext
             e.Property(x => x.Error).HasMaxLength(64);
             e.HasIndex(x => new { x.ServerId, x.At });
             e.HasIndex(x => x.At);
+            e.HasOne<Server>().WithMany().HasForeignKey(x => x.ServerId).OnDelete(DeleteBehavior.Cascade);
+        });
+        b.Entity<PeerCounter>(e =>
+        {
+            e.HasKey(x => new { x.ServerId, x.PublicKey });
+            e.Property(x => x.PublicKey).HasMaxLength(64);
+            e.HasOne<Server>().WithMany().HasForeignKey(x => x.ServerId).OnDelete(DeleteBehavior.Cascade);
+        });
+        b.Entity<DeviceUsage>(e =>
+        {
+            e.HasKey(x => new { x.DeviceId, x.ServerId, x.Span, x.Bucket });
+            e.HasIndex(x => new { x.Span, x.Bucket });
+            e.HasIndex(x => new { x.ServerId, x.Span, x.Bucket });
+            e.HasOne<Device>().WithMany().HasForeignKey(x => x.DeviceId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<Server>().WithMany().HasForeignKey(x => x.ServerId).OnDelete(DeleteBehavior.Cascade);
+        });
+        b.Entity<ServerUsage>(e =>
+        {
+            e.HasKey(x => new { x.ServerId, x.Span, x.Bucket });
+            e.HasIndex(x => new { x.Span, x.Bucket });
             e.HasOne<Server>().WithMany().HasForeignKey(x => x.ServerId).OnDelete(DeleteBehavior.Cascade);
         });
         b.Entity<Server>(e =>

@@ -195,6 +195,49 @@ public sealed class ServerProbe
     public string? Error { get; set; }
 }
 
+/// <summary>
+/// Последние счётчики пира AWG на сервере (из отчёта агента): база для подсчёта прироста трафика.
+/// Ключ — открытый ключ пира; адресов пользователей здесь нет.
+/// </summary>
+public sealed class PeerCounter
+{
+    public Guid ServerId { get; set; }
+    public string PublicKey { get; set; } = "";
+    public long RxBytes { get; set; }
+    public long TxBytes { get; set; }
+    public DateTime? LastHandshake { get; set; }
+    public DateTime At { get; set; }
+}
+
+/// <summary>
+/// История использования устройства на сервере выхода: только объём и время в сети.
+/// Span = 1 — час (Bucket — начало часа UTC, хранится 14 дней), Span = 24 — сутки по Москве
+/// (Bucket — полночь МСК в UTC, хранится 1 год). Rx — от пользователя к серверу, Tx — от сервера к пользователю.
+/// </summary>
+public sealed class DeviceUsage
+{
+    public Guid DeviceId { get; set; }
+    public Guid ServerId { get; set; }
+    public short Span { get; set; }
+    public DateTime Bucket { get; set; }
+    public long RxBytes { get; set; }
+    public long TxBytes { get; set; }
+    public int OnlineSeconds { get; set; }
+}
+
+/// <summary>История сервера выхода (все пиры, включая не опознанные): объём, пик и сумма времени подключённых.</summary>
+public sealed class ServerUsage
+{
+    public Guid ServerId { get; set; }
+    public short Span { get; set; }
+    public DateTime Bucket { get; set; }
+    public long RxBytes { get; set; }
+    public long TxBytes { get; set; }
+    public int PeakPeers { get; set; }
+    public long PeerSeconds { get; set; }
+    public int Reports { get; set; }
+}
+
 /// <summary>Cooperative native-client slot allocation; it does not enforce traffic limits.</summary>
 public sealed class AwgAllocation
 {

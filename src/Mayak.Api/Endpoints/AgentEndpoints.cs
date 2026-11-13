@@ -197,6 +197,9 @@ public static class AgentEndpoints
                     d.TxBytes = Math.Max(d.TxBytes, p.TxBytes);
                 }
             }
+            // История для статистики админки (объём и время в сети по часам и суткам). Отчёты пула VLESS пиров AWG не несут.
+            if (server.Role == ServerRoles.Exit && !string.Equals(report.Protocol, "vless", StringComparison.OrdinalIgnoreCase))
+                await UsageRecorder.RecordAsync(db, server.Id, report.Peers, DateTime.UtcNow, http.RequestAborted);
             await db.SaveChangesAsync();
             await tx.CommitAsync(http.RequestAborted);
             return Results.NoContent();
