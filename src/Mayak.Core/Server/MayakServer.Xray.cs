@@ -253,6 +253,39 @@ public sealed partial class MayakServer
         throw new MayakException("Xray не запустился с новой конфигурацией, возвращена прежняя.");
     }
 
+    // ───────────── Счётчики трафика по клиентам ─────────────
+
+    /// <summary>Включены ли в server.json счётчики по клиентам. null — Xray не запущен или конфиг не прочитан.</summary>
+    public bool? XrayUserStatsEnabled()
+    {
+        if (GetXrayState() != ServerState.Running) return null;
+        var json = ReadContainerFile(XrayServerJson, XrayContainer);
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try { return XrayConfig.HasUserStats(json); }
+        catch (System.Text.Json.JsonException) { return null; }
+    }
+
+    /// <summary>
+    /// Включает счётчики по клиентам: server.json дополняется секциями stats/api/policy, проверяется «xray -test»,
+    /// Xray перезапускается (активные подключения Xray переподключатся). При ошибке возвращается прежний конфиг.
+    /// </summary>
+    public void EnableXrayUserStats()
+    {
+        var json = ReadContainerFile(XrayServerJson, XrayContainer);
+        if (string.IsNullOrWhiteSpace(json)) throw new MayakException("server.json Xray не найден.");
+        if (XrayConfig.HasUserStats(json)) return;
+        ApplyXrayServerJson(XrayConfig.EnableUserStats(json));
+        Info("В Xray включены счётчики трафика по клиентам.");
+    }
+
+    /// <summary>Накопленный трафик по клиентам с запуска Xray. null — API счётчиков не ответил.</summary>
+    public List<XrayConfig.UserTraffic>? ReadXrayUserStats()
+    {
+        var r = ExecContainer($"xray api statsquery --server={XrayConfig.StatsApiListen} -timeout 3 -pattern 'user>>>' 2>&1", TimeSpan.FromSeconds(15), XrayContainer);
+        if (!r.Ok || !r.Output.Contains("\"stat\"") && !r.Output.TrimStart().StartsWith('{')) return null;
+        return XrayConfig.ParseUserStats(r.Output);
+    }
+
     // ───────────── Проверка протоколов ─────────────
 
     /// <summary>Создаёт (если нужно) служебную учётку для проверки: пир AmneziaWG и клиент Xray.</summary>

@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 using Mayak.Core.Agent;
 using Mayak.Core.Models;
 using Mayak.Core.Server;
+using Mayak.Core.Xray;
 
 namespace Mayak.Agent;
 
@@ -43,6 +44,8 @@ public sealed class AgentRunner
     private bool _helloDone;
     private bool _backupDone;
     private HashSet<string>? _seen;
+    private HostStatsReader.CpuTimes? _cpu;
+    private DateTime _xrayStatsFailedAt = DateTime.MinValue;
 
     public string Role { get; private set; } = "";
 
@@ -223,6 +226,7 @@ public sealed class AgentRunner
         {
             report.Error = "VPN на сервере не установлен или остановлен";
             report.ProvisioningProof = new ProvisioningRuntimeProof();
+            report.Host = ReadHost(shell);
             return report;
         }
 
@@ -271,6 +275,8 @@ public sealed class AgentRunner
             report.AppliedRevision = _appliedRevision;
         }
 
+        CollectXrayStats(server, snap, state, report);
+
         report.Peers = snap.Stats.Values.Select(s => new AgentPeerStats
         {
             PublicKey = s.PublicKey,
@@ -300,7 +306,63 @@ public sealed class AgentRunner
             ConfigurationLoaded = configLoaded,
             PostApplyCheckPassed = report.Error == null && !report.DryRun && report.AppliedRevision == state.Revision && configLoaded,
         };
+        report.Host = ReadHost(shell);
         return report;
+    }
+
+    /// <summary>Нагрузка сервера. Ошибка чтения не мешает отчёту: поле просто не заполняется.</summary>
+    private AgentHostStats? ReadHost(IShell shell)
+    {
+        try
+        {
+            var r = shell.Run(HostStatsReader.Command, TimeSpan.FromSeconds(10));
+            var (stats, cpu) = HostStatsReader.Parse(r.Output, _cpu);
+            if (cpu != null) _cpu = cpu;
+            return stats.MemTotalBytes > 0 || stats.NetInterface.Length > 0 ? stats : null;
+        }
+        catch (Exception ex) when (ex is MayakException or IOException or InvalidOperationException)
+        {
+            _log("Нагрузку сервера прочитать не удалось: " + ex.Message);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Трафик Xray по клиентам. Счётчики включаются только по просьбе API (state.XrayStats), не в пробном режиме
+    /// и не чаще раза в час после неудачи: включение перезапускает Xray.
+    /// </summary>
+    private void CollectXrayStats(MayakServer server, ServerSnapshot snap, AgentState state, AgentReport report)
+    {
+        if (snap.XrayState != ServerState.Running || snap.Xray == null) return;
+        try
+        {
+            var enabled = server.XrayUserStatsEnabled();
+            if (enabled == false && state.XrayStats && !_cfg.DryRun && DateTime.UtcNow - _xrayStatsFailedAt > TimeSpan.FromHours(1))
+            {
+                try
+                {
+                    _log("Включаю в Xray счётчики трафика по клиентам (Xray перезапустится, его клиенты переподключатся).");
+                    server.EnableXrayUserStats();
+                    enabled = true;
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _xrayStatsFailedAt = DateTime.UtcNow;
+                    report.Warnings.Add("Счётчики трафика Xray не включены: " + ex.Message);
+                    _log(report.Warnings[^1]);
+                }
+            }
+            if (enabled != true) return;
+            var users = server.ReadXrayUserStats();
+            if (users == null) return;
+            report.XrayStatsEnabled = true;
+            report.XrayUsers = users.Where(u => u.Email.StartsWith(XrayConfig.MayakEmailPrefix, StringComparison.Ordinal))
+                .Select(u => new AgentXrayUserStats { Email = u.Email, UplinkBytes = u.UplinkBytes, DownlinkBytes = u.DownlinkBytes }).ToList();
+        }
+        catch (Exception ex) when (ex is MayakException or IOException or InvalidOperationException or System.Text.Json.JsonException)
+        {
+            _log("Счётчики Xray прочитать не удалось: " + ex.Message);
+        }
     }
 
     private AgentReport ApplyEntry(AgentState state)
@@ -334,6 +396,7 @@ public sealed class AgentRunner
             if (unreachable.Count > 0)
                 report.Warnings.Add($"Выход {state.Relay.TargetHost} недоступен с этого входа по TCP: {string.Join(", ", unreachable)}");
         }
+        report.Host = ReadHost(shell);
         return report;
     }
 

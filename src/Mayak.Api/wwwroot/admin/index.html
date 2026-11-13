@@ -75,7 +75,7 @@
 <link rel="stylesheet" href="/newassets/mayak-v1/ui.css?v=20261110f"><script defer src="/newassets/mayak-v1/theme.js"></script>
 <style>
   /* Статистика и раскладка «список + карточка» (только админка; идёт после ui.css). */
-  body.admin-page { --c-down: var(--beam); --c-up: #6f8fd6; }
+  body.admin-page { --c-down: var(--beam); --c-up: #6f8fd6; --c-cpu: #c98bd6; }
   body.admin-page main > .split, body.admin-page main > .dash { max-width: 1360px; }
   .split { display: grid; grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); gap: 20px; align-items: start; }
   .split > .pane-list { position: sticky; top: 76px; }
@@ -301,6 +301,16 @@ function chart(points, { keys, colors, names, fmt = gb, label, axis }) {
     ${names.length > 1 ? `<div class="legend">${names.map((nm, j) => `<span><i style="background:${colors[j]}"></i>${esc(nm)}</span>`).join("")}</div>` : ""}</div>`;
 }
 const trafficChart = (points, label, axis) => chart(points, { keys: ["down", "up"], colors: [C_DOWN, C_UP], names: ["к пользователю", "от пользователя"], label, axis });
+const C_CPU = "var(--c-cpu)", C_MEM = "var(--c-up)";
+const uptimeText = sec => { sec = Number(sec || 0); const d = Math.floor(sec / 86400); return d >= 1 ? d + " дн" : dur(sec); };
+// Нагрузка сервера: плитки из последнего отчёта агента (host) — процессор, память, диск, load, время работы.
+function hostKpis(h) {
+  if (!h) return "";
+  return kpi(h.cpu == null ? "—" : pct(h.cpu), "процессор сейчас", `${num(h.cpus)} ${h.cpus === 1 ? "ядро" : h.cpus < 5 ? "ядра" : "ядер"} · load ${String(h.load1).replace(".", ",")}`)
+    + kpi(pct(h.memPercent), "память занята", `${gb(h.memUsed)} из ${gb(h.memTotal)}`)
+    + kpi(h.diskPercent == null ? "—" : pct(h.diskPercent), "диск занят", `свободно ${gb(h.diskFree)} из ${gb(h.diskTotal)}`)
+    + kpi(uptimeText(h.uptimeSeconds), "работает без перезагрузки", h.fresh ? "данные свежие" : "отчёт " + esc(ago(h.at)));
+}
 const attemptState = { connected: ["ok", "подключено"], ended: ["ok", "завершено"], failed: ["bad", "не удалось"], pending: ["", "идёт"] };
 function rowButton(el, open) { el.setAttribute("role", "button"); el.tabIndex = 0; el.onclick = open; el.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } }; }
 
@@ -311,7 +321,8 @@ async function overview() {
   try { s = await api(`/api/admin/stats/overview?days=${period}`); }
   catch (e) { if (e.status === 404) { app.innerHTML = `<div class="card"><h2>Обзор</h2><p class="muted">Статистика появится после обновления сервиса.</p></div>`; return; } throw e; }
   const t = s.totals, a = s.attempts7d;
-  const series = s.series.map(p => ({ ...p, failed: p.attempts - p.proven }));
+  const series = s.series.map(p => ({ ...p, failed: p.attempts - p.proven, awg: p.down + p.up - p.xrayDown - p.xrayUp, xray: p.xrayDown + p.xrayUp }));
+  const xrayCounted = s.servers.some(x => x.host?.xrayStats), xrayTotal = t.xrayDown + t.xrayUp, loadCounted = s.servers.some(x => x.host);
   app.innerHTML = `<div class="dash">
     <div class="row dash-head"><h2 class="grow">Обзор</h2>${periodSeg("per")}</div>
     <div class="kpis">
@@ -320,23 +331,25 @@ async function overview() {
       ${kpi(gb(t.downToday + t.upToday), "трафик сегодня", `↓ ${gb(t.downToday)} · ↑ ${gb(t.upToday)}`)}
       ${kpi(gb(t.down + t.up), `трафик за ${s.days} дн`, `↓ ${gb(t.down)} · ↑ ${gb(t.up)}`)}
       ${kpi(pct(a.successPercent), "подключений успешно, 7 дн", `${num(a.proven)} из ${num(a.total)} · обычно за ${secs(a.medianSeconds)}`)}
+      ${xrayCounted ? kpi(t.down + t.up ? pct(100 * xrayTotal / (t.down + t.up)) : "—", `трафика через Xray, ${s.days} дн`, `${gb(xrayTotal)} · сейчас ${num(t.onlineXrayNow)} устр.`) : ""}
     </div>
     ${s.attention.length ? `<div class="card"><h3>Требует внимания</h3><ul class="attn">${s.attention.map((x, i) => `<li class="${esc(x.level)}"><button type="button" class="linkish" data-i="${i}">${esc(x.text)}</button></li>`).join("")}</ul></div>` : ""}
-    <div class="card"><h3>Трафик по дням</h3>${trafficChart(s.series, "Трафик по дням", p => dayShort(p.day))}</div>
+    <div class="card"><h3>Трафик по дням</h3>${trafficChart(s.series, "Трафик по дням", p => dayShort(p.day))}
+      ${xrayCounted ? `<h3 class="sub">По протоколам</h3>` + chart(series, { keys: ["awg", "xray"], colors: [C_DOWN, C_CPU], names: ["AmneziaWG", "Xray"], label: "Трафик по протоколам", axis: p => dayShort(p.day) }) : ""}</div>
     <div class="cols2">
       <div class="card"><h3>Активные люди по дням</h3>${chart(s.series, { keys: ["accounts"], colors: [C_DOWN], names: ["людей"], fmt: num, label: "Активные люди по дням", axis: p => dayShort(p.day) })}</div>
       <div class="card"><h3>Попытки подключения</h3>${chart(series, { keys: ["proven", "failed"], colors: ["var(--green)", "var(--red)"], names: ["успешные", "неудачные"], fmt: num, label: "Попытки подключения по дням", axis: p => dayShort(p.day) })}</div>
     </div>
-    <div class="card"><h3>Серверы</h3><div class="table-wrap"><table><thead><tr><th>Сервер</th><th class="num">Сейчас</th><th class="num">Пик 24 ч</th><th class="num">Трафик 24 ч</th><th class="num">За ${s.days} дн</th><th class="num">Подключения 7 дн</th><th class="num">С Москвы 24 ч</th></tr></thead><tbody>
+    <div class="card"><h3>Серверы</h3><div class="table-wrap"><table><thead><tr><th>Сервер</th><th class="num">Сейчас</th><th class="num">Пик 24 ч</th><th class="num">Трафик 24 ч</th><th class="num">За ${s.days} дн</th><th class="num">Подключения 7 дн</th><th class="num">С Москвы 24 ч</th>${loadCounted ? `<th class="num">Процессор 24 ч</th><th class="num">Память</th>` : ""}</tr></thead><tbody>
       ${s.servers.map(x => `<tr class="clickable" data-s="${x.id}"><td><span class="dot ${x.reporting ? "on" : "off"}"></span> <b>${esc(x.city || x.name)}</b>${x.active ? ` <span class="chip">активный</span>` : ""}${x.autoSelectEnabled ? ` <span class="chip">автовыбор</span>` : ""}</td>
         <td class="num">${num(x.peersNow)}<span class="muted"> / ${num(x.capacity)}</span></td><td class="num">${num(x.peak24h)}</td><td class="num">${gb(x.down24h + x.up24h)}</td><td class="num">${gb(x.down + x.up)}</td>
-        <td class="num">${pct(x.attempts7d.successPercent)}<span class="muted"> · ${num(x.attempts7d.total)}</span></td><td class="num">${x.tcpUptime24h == null ? "—" : pct(x.tcpUptime24h)}</td></tr>`).join("")}
+        <td class="num">${pct(x.attempts7d.successPercent)}<span class="muted"> · ${num(x.attempts7d.total)}</span></td><td class="num">${x.tcpUptime24h == null ? "—" : pct(x.tcpUptime24h)}</td>${loadCounted ? `<td class="num">${x.cpu24hAvg == null ? "—" : pct(x.cpu24hAvg)}${x.cpu24hMax == null ? "" : `<span class="muted"> · пик ${pct(x.cpu24hMax)}</span>`}</td><td class="num">${x.host ? pct(x.host.memPercent) : "—"}</td>` : ""}</tr>`).join("")}
     </tbody></table></div></div>
     <div class="cols2">
       <div class="card"><h3>Больше всего трафика за ${s.days} дн</h3>${s.topAccounts.length ? `<div class="table-wrap"><table><tbody>${s.topAccounts.map(x => `<tr class="clickable" data-a="${x.accountId}"><td>${esc(x.name)}</td><td class="num">${gb(x.down + x.up)}</td><td class="num muted">${dur(x.onlineSeconds)}</td></tr>`).join("")}</tbody></table></div>` : `<p class="muted">Данных пока нет.</p>`}</div>
       <div class="card"><h3>Устройства и версии</h3><div class="table-wrap"><table><thead><tr><th>Система</th><th>Версия</th><th class="num">Устройств</th><th class="num">Активны</th></tr></thead><tbody>${s.versions.map(v => `<tr><td>${esc(kinds[v.kind] || v.kind)}</td><td>${esc(v.version || "—")}</td><td class="num">${num(v.devices)}</td><td class="num">${num(v.active)}</td></tr>`).join("")}</tbody></table></div></div>
     </div>
-    <p class="muted">История копится с ${s.historyFrom ? esc(dayShort(s.historyFrom)) : "момента обновления сервиса"}; сутки — по Москве. Трафик считается по AmneziaWG: путь Xray и нагрузка серверов появятся после обновления агента. «Активны» — был трафик или подключение за ${s.days} дн.</p>
+    <p class="muted">История копится с ${s.historyFrom ? esc(dayShort(s.historyFrom)) : "момента обновления сервиса"}; сутки — по Москве. ${xrayCounted ? "Трафик — AmneziaWG и Xray." : "Трафик считается по AmneziaWG; Xray добавится, когда агенты выходов обновятся."}${loadCounted ? "" : " Нагрузка серверов появится после обновления агентов."} «Активны» — был трафик или подключение за ${s.days} дн.</p>
   </div>`;
   bindPeriod("per");
   app.querySelectorAll(".attn button").forEach(b => b.onclick = () => { const x = s.attention[+b.dataset.i]; go(x.kind === "server" ? "servers" : "people", x.id); });
@@ -417,9 +430,9 @@ async function showPerson(row, initial = false) {
       ${a.enabled && a.active ? `<p class="muted" style="margin-top:8px">Новый код заменит предыдущий неиспользованный. Приглашение — для регистрации в кабинете по почте и паролю или для входа в приложении Маяк.</p>` : `<p class="muted" role="status" style="margin-top:8px">Сначала включите аккаунт и убедитесь, что доступ действует. Приглашение само по себе доступ не включает.</p>`}
       <div id="inviteOut"></div></div>`;
   const devicesTable = (stats = new Map()) => `<table><thead><tr><th></th><th>Устройство</th><th>Сервер</th><th class="num">${period} дн</th><th class="num">В сети 7 дн</th><th>Связь</th><th></th></tr></thead><tbody>
-    ${row.devices.map(x => { const s = stats.get(x.id); return `<tr data-id="${x.id}"><td><span class="dot ${!x.enabled ? "off" : online(x.lastHandshake) ? "on" : ""}" title="${!x.enabled ? "выключено" : online(x.lastHandshake) ? "в сети" : "не в сети"}"></span></td>
+    ${row.devices.map(x => { const s = stats.get(x.id), seen = s ? s.lastHandshake : x.lastHandshake, on = s ? s.online : online(x.lastHandshake); return `<tr data-id="${x.id}"><td><span class="dot ${!x.enabled ? "off" : on ? "on" : ""}" title="${!x.enabled ? "выключено" : on ? "в сети" : "не в сети"}"></span></td>
       <td class="dev"${s?.osVersion ? ` title="${esc(s.osVersion)}"` : ""}>${esc(x.name)}<div class="muted">${esc(kinds[x.kind] || x.kind)}${s?.appVersion ? " · " + esc(s.appVersion) : ""}</div></td>
-      <td>${esc(s?.server || "—")}</td><td class="num">${s ? gb(s.down + s.up) : "—"}</td><td class="num">${s ? dur(s.online7dSeconds) : "—"}</td><td>${online(x.lastHandshake) ? "сейчас" : esc(ago(x.lastHandshake))}</td>
+      <td>${esc(s?.server || "—")}${s?.protocol ? `<div class="muted">${esc(s.protocol === "Xray" ? "Xray" : "AmneziaWG")}</div>` : ""}</td><td class="num">${s ? gb(s.down + s.up) : "—"}${s?.xrayDown + s?.xrayUp > 0 ? `<div class="muted">Xray ${gb(s.xrayDown + s.xrayUp)}</div>` : ""}</td><td class="num">${s ? dur(s.online7dSeconds) : "—"}</td><td>${on ? "сейчас" : esc(ago(seen))}</td>
       <td class="row">${x.canExport ? `<button class="b" data-a="files">Файл</button>` : ""}<button class="b" data-a="toggle">${x.enabled ? "Выкл." : "Вкл."}</button><button class="b d" data-a="del" aria-label="Удалить устройство ${esc(x.name)}">✕</button></td></tr>`; }).join("")}</tbody></table>`;
   const bindDevices = () => d.querySelectorAll("tr[data-id] button").forEach(b => b.onclick = async () => {
     const id = b.closest("tr").dataset.id, x = row.devices.find(v => v.id === id);
@@ -472,7 +485,7 @@ async function showPerson(row, initial = false) {
   if (selected !== a.id || !$("#pstats")) return;
   const t = s.totals, at = s.attempts7d, onNow = s.devices.filter(x => x.online).length;
   $("#pstats").innerHTML = kpi(onNow ? `${onNow} устр.` : "нет", "сейчас в сети", onNow ? "" : "был " + esc(ago(s.devices[0]?.lastHandshake)))
-    + kpi(gb(t.down + t.up), `трафик за ${s.days} дн`, `↓ ${gb(t.down)} · ↑ ${gb(t.up)}`)
+    + kpi(gb(t.down + t.up), `трафик за ${s.days} дн`, `↓ ${gb(t.down)} · ↑ ${gb(t.up)}${t.xrayDown + t.xrayUp ? ` · Xray ${gb(t.xrayDown + t.xrayUp)}` : ""}`)
     + kpi(dur(t.online7dSeconds), "в сети за 7 дн", `активных дней ${t.activeDays} из ${s.days}`)
     + kpi(pct(at.successPercent), "подключений успешно, 7 дн", at.total ? `${at.proven} из ${at.total} · обычно за ${secs(at.medianSeconds)}` : "попыток не было");
   $("#pchart").innerHTML = trafficChart(s.series, "Трафик по дням", p => dayShort(p.day));
@@ -916,6 +929,7 @@ function serverDetail(s, exits) {
     <p class="muted meta">${esc(s.host)}${s.city ? " · " + esc(s.city) : ""}${s.country ? ", " + esc(s.country) : ""} · ${s.role === "exit" ? "выход" + (s.active ? ", активный" : "") + (s.autoSelectEnabled ? ", автовыбор" : "") : "вход"} · агент ${esc(s.agentVersion || "—")} · ${s.lastSeen ? "связь " + esc(ago(s.lastSeen)) : "агент не выходил на связь"}</p>
     ${s.provisioningStatus && s.provisioningStatus !== "installed" ? `<p class="muted" role="status">Установка: ${esc(s.provisioningStatus)}. ${esc(s.provisioningMessage || "")}${!canActivate ? " Сервер останется неактивным до подтверждения identity и синхронизации." : ""}</p>` : ""}
     <div class="kpis" id="sstats" aria-live="polite">${s.role === "exit" ? `<div class="kpi skeleton"><b>…</b><span>загрузка статистики</span></div>` : ""}</div></div>
+    <div class="card" id="sloadcard" hidden><h3>Нагрузка</h3><div class="kpis" id="shost"></div><div id="sload"></div></div>
     ${s.role === "exit" ? `<div class="card"><h3>Последние 48 часов</h3><div id="shour"></div><div id="speers"></div></div>
     <div class="card"><div class="row"><h3 class="grow">По дням</h3>${periodSeg("sper")}</div><div id="sdaily"></div><div id="sdevices"></div></div>
     <div class="cols2"><div class="card"><h3>Подключены сейчас</h3><div id="snow"><p class="muted">Загрузка…</p></div></div>
@@ -949,7 +963,7 @@ function serverDetail(s, exits) {
   if ($("#probeOne")) $("#probeOne").onclick = () => runProbes(s.id, $("#probeOne"));
   if ($("#tok")) $("#tok").onclick = async () => { if (!confirm("Старый токен агента перестанет работать. Продолжить?")) return; const r = await api(`/api/admin/servers/${s.id}/token`, { method: "POST" }); installBox(r.install, r.installDryRun); };
   if ($("#del")) $("#del").onclick = () => confirm(`Удалить «${s.name}» из списка? На самом сервере VPN продолжит работать.`) && api(`/api/admin/servers/${s.id}`, { method: "DELETE" }).then(() => { selectedServer = null; render(); });
-  if (s.role === "exit") serverStats(s);
+  serverStats(s);
 }
 
 async function serverStats(s) {
@@ -957,20 +971,29 @@ async function serverStats(s) {
   const pressed = $("#sper"); if (pressed) pressed.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(Number(b.dataset.p) === period)));
   let x;
   try { x = await api(`/api/admin/stats/servers/${s.id}?days=${period}`); }
-  catch (e) { if (selectedServer === s.id && $("#sstats")) { $("#sstats").innerHTML = `<p class="muted">Статистика недоступна${e.status === 404 ? ": появится после обновления сервиса" : ""}.</p>`; $("#snow").innerHTML = ""; } return; }
+  catch (e) { if (selectedServer === s.id && $("#sstats")) { $("#sstats").innerHTML = `<p class="muted">Статистика недоступна${e.status === 404 ? ": появится после обновления сервиса" : ""}.</p>`; if ($("#snow")) $("#snow").innerHTML = ""; } return; }
   if (selectedServer !== s.id || !$("#sstats")) return;
   const sum = serverSummary.get(s.id), h = x.hourly, a = x.attempts7d;
   const last24 = h.slice(-24), peak24 = Math.max(0, ...last24.map(p => p.peak)), traffic24 = last24.reduce((t, p) => t + p.down + p.up, 0);
+  const xray24 = last24.reduce((t, p) => t + p.xrayDown + p.xrayUp, 0), hasLoad = h.some(p => p.cpu != null || p.memTotal > 0);
+  $("#sloadcard").hidden = false;
+  $("#shost").innerHTML = x.host ? hostKpis(x.host) : `<p class="muted">Нагрузку присылает агент 0.2 и новее${x.agentVersion ? `, на этом сервере ${esc(x.agentVersion)}` : ""}.</p>`;
+  $("#sload").innerHTML = hasLoad ? `<h3 class="sub">Процессор по часам, среднее</h3>` + chart(h, { keys: ["cpu"], colors: [C_CPU], names: ["процессор"], fmt: pct, label: "Загрузка процессора по часам", axis: p => hourShort(p.at) })
+      + `<div class="cols2"><div><h3 class="sub">Память, максимум за час</h3>` + chart(h, { keys: ["memUsed"], colors: [C_MEM], names: ["занято"], label: "Занятая память по часам", axis: p => hourShort(p.at) })
+      + `</div><div><h3 class="sub">Сеть сервера по часам</h3>` + chart(h, { keys: ["netOut", "netIn"], colors: [C_DOWN, C_UP], names: ["отдано", "принято"], label: "Сеть сервера по часам", axis: p => hourShort(p.at) })
+      + `</div></div><p class="muted">Сеть сервера — весь трафик машины: VPN в ней виден дважды (от пользователя и в интернет).</p>` : "";
+  if (s.role !== "exit") return;
   $("#sstats").innerHTML = kpi(`${num(x.now.length)}<small class="of"> / ${num(x.capacity)}</small>`, "подключено сейчас", `пик за 24 ч ${num(peak24)}`)
-    + kpi(gb(traffic24), "трафик за 24 ч", `за ${x.days} дн ${gb(x.totals.down + x.totals.up)}`)
+    + kpi(gb(traffic24), "трафик за 24 ч", `за ${x.days} дн ${gb(x.totals.down + x.totals.up)}${xray24 ? ` · Xray ${pct(100 * xray24 / traffic24)}` : ""}`)
     + kpi(pct(a.successPercent), "подключений успешно, 7 дн", a.total ? `${a.proven} из ${a.total} · обычно за ${secs(a.medianSeconds)}` : "попыток не было")
     + kpi(sum?.tcpUptime24h == null ? "—" : pct(sum.tcpUptime24h), "порт доступен с Москвы", "за 24 ч");
   $("#shour").innerHTML = trafficChart(h, "Трафик по часам", p => hourShort(p.at));
   $("#speers").innerHTML = `<h3 class="sub">Подключённых по часам (пик)</h3>` + chart(h, { keys: ["peak"], colors: [C_UP], names: ["подключено"], fmt: num, label: "Пик подключённых по часам", axis: p => hourShort(p.at) });
   $("#sdaily").innerHTML = trafficChart(x.series, "Трафик по дням", p => dayShort(p.day));
-  $("#sdevices").innerHTML = `<h3 class="sub">Активные устройства по дням</h3>` + chart(x.series, { keys: ["devices"], colors: [C_UP], names: ["устройств"], fmt: num, label: "Активные устройства по дням", axis: p => dayShort(p.day) });
-  $("#snow").innerHTML = x.now.length ? `<ul class="plain">${x.now.map(p => `<li>${p.accountId ? `<button type="button" class="linkish" data-a="${p.accountId}">${esc(p.account)}</button>` : esc(p.account)}${p.device ? ` <span class="muted">· ${esc(p.device)}</span>` : ""} <span class="muted">· ${esc(ago(p.lastHandshake))}</span></li>`).join("")}</ul>` : `<p class="muted">Сейчас никто не подключён.</p>`;
-  $("#stop").innerHTML = x.top.length ? `<div class="table-wrap"><table><tbody>${x.top.map(t => `<tr${t.accountId ? ` class="clickable" data-a="${t.accountId}"` : ""}><td>${esc(t.account)}<div class="muted">${esc(t.device)}</div></td><td class="num">${gb(t.down + t.up)}</td><td class="num muted">${dur(t.onlineSeconds)}</td></tr>`).join("")}</tbody></table></div><p class="muted">За ${x.days} дн.</p>` : `<p class="muted">Данных пока нет.</p>`;
+  $("#sdevices").innerHTML = `<h3 class="sub">Активные устройства по дням</h3>` + chart(x.series, { keys: ["devices"], colors: [C_UP], names: ["устройств"], fmt: num, label: "Активные устройства по дням", axis: p => dayShort(p.day) })
+    + (x.series.some(p => p.cpu != null) ? `<h3 class="sub">Процессор по дням, среднее</h3>` + chart(x.series, { keys: ["cpu"], colors: [C_CPU], names: ["процессор"], fmt: pct, label: "Загрузка процессора по дням", axis: p => dayShort(p.day) }) : "");
+  $("#snow").innerHTML = x.now.length ? `<ul class="plain">${x.now.map(p => `<li>${p.accountId ? `<button type="button" class="linkish" data-a="${p.accountId}">${esc(p.account)}</button>` : esc(p.account)}${p.device ? ` <span class="muted">· ${esc(p.device)}</span>` : ""}${p.protocol === "Xray" ? ` <span class="chip">Xray</span>` : ""} <span class="muted">· ${esc(ago(p.lastHandshake))}</span></li>`).join("")}</ul>` : `<p class="muted">Сейчас никто не подключён.</p>`;
+  $("#stop").innerHTML = x.top.length ? `<div class="table-wrap"><table><tbody>${x.top.map(t => `<tr${t.accountId ? ` class="clickable" data-a="${t.accountId}"` : ""}><td>${esc(t.account)}<div class="muted">${esc(t.device)}</div></td><td class="num">${gb(t.down + t.up)}${t.xray ? `<div class="muted">Xray ${gb(t.xray)}</div>` : ""}</td><td class="num muted">${dur(t.onlineSeconds)}</td></tr>`).join("")}</tbody></table></div><p class="muted">За ${x.days} дн.</p>` : `<p class="muted">Данных пока нет.</p>`;
   $("#detail").querySelectorAll("[data-a]").forEach(el => el.tagName === "TR" ? rowButton(el, () => go("people", el.dataset.a)) : el.onclick = () => go("people", el.dataset.a));
 }
 

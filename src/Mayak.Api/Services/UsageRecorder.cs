@@ -1,5 +1,6 @@
 using Mayak.Api.Data;
 using Mayak.Core.Agent;
+using Mayak.Core.Xray;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using NpgsqlTypes;
@@ -58,9 +59,25 @@ public static class UsageMath
 /// <summary>Запись прироста из отчёта агента в историю (часы и сутки) — в той же транзакции, что и отчёт.</summary>
 public static class UsageRecorder
 {
-    public static async Task RecordAsync(MayakDb db, Guid serverId, IReadOnlyCollection<AgentPeerStats> peers, DateTime now, CancellationToken ct = default)
+    /// <summary>Ключи служебных счётчиков в PeerCounters рядом с ключами пиров AWG (base64, 44 символа).</summary>
+    public const string XrayKeyPrefix = "xray:";
+    public const string NetKeyPrefix = "host:net:";
+
+    public static string XrayKey(Guid deviceId) => XrayKeyPrefix + deviceId.ToString("N");
+
+    /// <summary>Устройство по email клиента Xray «mayak:&lt;id без дефисов&gt;».</summary>
+    public static Guid? DeviceFromXrayEmail(string email) =>
+        email.StartsWith(XrayConfig.MayakEmailPrefix, StringComparison.Ordinal) &&
+        Guid.TryParseExact(email[XrayConfig.MayakEmailPrefix.Length..], "N", out var id) ? id : null;
+
+    public static Task RecordAsync(MayakDb db, Guid serverId, IReadOnlyCollection<AgentPeerStats> peers, DateTime now, CancellationToken ct = default) =>
+        RecordAsync(db, serverId, new AgentReport { Peers = peers.ToList() }, now, ct);
+
+    sealed class DeviceDelta { public long Rx, Tx, XRx, XTx; public int Sec; }
+
+    public static async Task RecordAsync(MayakDb db, Guid serverId, AgentReport report, DateTime now, CancellationToken ct = default)
     {
-        var byKey = peers.Where(p => p.PublicKey.Length is > 0 and <= 64)
+        var byKey = report.Peers.Where(p => p.PublicKey.Length is > 0 and <= 64 && !p.PublicKey.Contains(':'))
             .GroupBy(p => p.PublicKey).ToDictionary(g => g.Key, g => g.First());
         var counters = await db.PeerCounters.Where(c => c.ServerId == serverId).ToDictionaryAsync(c => c.PublicKey, ct);
         var keys = byKey.Keys.ToList();
@@ -68,9 +85,22 @@ public static class UsageRecorder
             (await db.Devices.AsNoTracking().Where(d => keys.Contains(d.AwgPublicKey)).Select(d => new { d.Id, d.AwgPublicKey }).ToListAsync(ct))
             .GroupBy(d => d.AwgPublicKey).ToDictionary(g => g.Key, g => g.First().Id);
 
-        long serverRx = 0, serverTx = 0, peerSeconds = 0;
+        PeerCounter Counter(string key)
+        {
+            if (!counters.TryGetValue(key, out var c))
+            {
+                c = new PeerCounter { ServerId = serverId, PublicKey = key };
+                db.PeerCounters.Add(c);
+                counters[key] = c;
+            }
+            return c;
+        }
+
+        DeviceDelta Dev(Dictionary<Guid, DeviceDelta> map, Guid id) => map.TryGetValue(id, out var e) ? e : map[id] = new DeviceDelta();
+
+        long serverRx = 0, serverTx = 0, xrayRx = 0, xrayTx = 0, peerSeconds = 0;
         var onlinePeers = 0;
-        var devIds = new List<Guid>(); var devRx = new List<long>(); var devTx = new List<long>(); var devSec = new List<int>();
+        var perDevice = new Dictionary<Guid, DeviceDelta>();
         foreach (var (key, p) in byKey)
         {
             counters.TryGetValue(key, out var prev);
@@ -78,44 +108,99 @@ public static class UsageRecorder
             var hs = p.LatestHandshake is DateTime h ? DateTime.SpecifyKind(h, DateTimeKind.Utc) : (DateTime?)null;
             var online = UsageMath.IsOnline(hs, now);
             var seconds = UsageMath.OnlineSeconds(prev?.At, now, online);
-            if (prev == null)
-            {
-                prev = new PeerCounter { ServerId = serverId, PublicKey = key };
-                db.PeerCounters.Add(prev);
-            }
-            prev.RxBytes = Math.Max(0, p.RxBytes);
-            prev.TxBytes = Math.Max(0, p.TxBytes);
-            prev.LastHandshake = hs ?? prev.LastHandshake;
-            prev.At = now;
+            var c = Counter(key);
+            c.RxBytes = Math.Max(0, p.RxBytes);
+            c.TxBytes = Math.Max(0, p.TxBytes);
+            c.LastHandshake = hs ?? c.LastHandshake;
+            c.At = now;
 
             serverRx += rx; serverTx += tx; peerSeconds += seconds;
             if (online) onlinePeers++;
             if ((rx > 0 || tx > 0 || seconds > 0) && deviceByKey.TryGetValue(key, out var deviceId))
             {
-                devIds.Add(deviceId); devRx.Add(rx); devTx.Add(tx); devSec.Add(seconds);
+                var d = Dev(perDevice, deviceId);
+                d.Rx += rx; d.Tx += tx; d.Sec = Math.Max(d.Sec, seconds);
             }
         }
 
+        // Xray: uplink — от пользователя (Rx сервера), downlink — к пользователю (Tx). «В сети» — был трафик с прошлого отчёта.
+        // Время в сети устройства за отчёт из двух протоколов не складывается: берётся большее.
+        if (report.XrayStatsEnabled)
+        {
+            var xray = report.XrayUsers.Select(u => (Id: DeviceFromXrayEmail(u.Email), u))
+                .Where(x => x.Id != null).GroupBy(x => x.Id!.Value).ToDictionary(g => g.Key, g => g.First().u);
+            var ids = xray.Keys.ToList();
+            var known = ids.Count == 0 ? new HashSet<Guid>() :
+                (await db.Devices.AsNoTracking().Where(d => ids.Contains(d.Id)).Select(d => d.Id).ToListAsync(ct)).ToHashSet();
+            foreach (var (deviceId, u) in xray)
+            {
+                if (!known.Contains(deviceId)) continue;
+                var key = XrayKey(deviceId);
+                counters.TryGetValue(key, out var prev);
+                var (rx, tx) = UsageMath.Delta(prev?.RxBytes, prev?.TxBytes, u.UplinkBytes, u.DownlinkBytes);
+                var online = rx + tx > 0;
+                var seconds = UsageMath.OnlineSeconds(prev?.At, now, online);
+                var c = Counter(key);
+                c.RxBytes = Math.Max(0, u.UplinkBytes);
+                c.TxBytes = Math.Max(0, u.DownlinkBytes);
+                if (online) c.LastHandshake = now;
+                c.At = now;
+
+                serverRx += rx; serverTx += tx; xrayRx += rx; xrayTx += tx; peerSeconds += seconds;
+                if (online) onlinePeers++;
+                if (rx > 0 || tx > 0 || seconds > 0)
+                {
+                    var d = Dev(perDevice, deviceId);
+                    d.Rx += rx; d.Tx += tx; d.XRx += rx; d.XTx += tx; d.Sec = Math.Max(d.Sec, seconds);
+                }
+            }
+        }
+
+        // Нагрузка: процессор (среднее и максимум), память, load, диск, байты сетевого интерфейса.
+        var host = report.Host;
+        long netRx = 0, netTx = 0;
+        if (host is { NetInterface.Length: > 0 and <= 40 })
+        {
+            var key = NetKeyPrefix + host.NetInterface;
+            counters.TryGetValue(key, out var prev);
+            (netRx, netTx) = UsageMath.Delta(prev?.RxBytes, prev?.TxBytes, host.NetRxBytes, host.NetTxBytes);
+            var c = Counter(key);
+            c.RxBytes = Math.Max(0, host.NetRxBytes);
+            c.TxBytes = Math.Max(0, host.NetTxBytes);
+            c.At = now;
+        }
+        double? cpu = host?.CpuPercent is double cp && double.IsFinite(cp) ? Math.Clamp(cp, 0, 100) : null;
+        var memTotal = Math.Max(0, host?.MemTotalBytes ?? 0);
+        var memUsed = memTotal > 0 ? Math.Clamp(memTotal - Math.Max(0, host!.MemAvailableBytes), 0, memTotal) : 0;
+        var load1 = host != null && double.IsFinite(host.Load1) ? Math.Clamp(host.Load1, 0, 10000) : 0;
+        var diskTotal = Math.Max(0, host?.DiskTotalBytes ?? 0);
+        var diskFree = Math.Clamp(host?.DiskFreeBytes ?? 0, 0, diskTotal);
+
         var hour = UsageMath.HourBucket(now);
         var day = UsageMath.DayBucket(now);
-        if (devIds.Count > 0)
+        if (perDevice.Count > 0)
         {
+            var list = perDevice.ToList();
             await db.Database.ExecuteSqlRawAsync("""
-                INSERT INTO "DeviceUsage" ("DeviceId","ServerId","Span","Bucket","RxBytes","TxBytes","OnlineSeconds")
-                SELECT u.d, @server, s.span, s.bucket, u.rx, u.tx, u.sec
-                FROM unnest(@devs, @rxs, @txs, @secs) AS u(d, rx, tx, sec)
+                INSERT INTO "DeviceUsage" ("DeviceId","ServerId","Span","Bucket","RxBytes","TxBytes","OnlineSeconds","XrayRxBytes","XrayTxBytes")
+                SELECT u.d, @server, s.span, s.bucket, u.rx, u.tx, u.sec, u.xrx, u.xtx
+                FROM unnest(@devs, @rxs, @txs, @secs, @xrxs, @xtxs) AS u(d, rx, tx, sec, xrx, xtx)
                 CROSS JOIN (VALUES (@hourSpan, @hour), (@daySpan, @day)) AS s(span, bucket)
                 ON CONFLICT ("DeviceId","ServerId","Span","Bucket") DO UPDATE SET
                   "RxBytes" = "DeviceUsage"."RxBytes" + EXCLUDED."RxBytes",
                   "TxBytes" = "DeviceUsage"."TxBytes" + EXCLUDED."TxBytes",
-                  "OnlineSeconds" = "DeviceUsage"."OnlineSeconds" + EXCLUDED."OnlineSeconds"
+                  "OnlineSeconds" = "DeviceUsage"."OnlineSeconds" + EXCLUDED."OnlineSeconds",
+                  "XrayRxBytes" = "DeviceUsage"."XrayRxBytes" + EXCLUDED."XrayRxBytes",
+                  "XrayTxBytes" = "DeviceUsage"."XrayTxBytes" + EXCLUDED."XrayTxBytes"
                 """,
                 [
                     new NpgsqlParameter("server", NpgsqlDbType.Uuid) { Value = serverId },
-                    new NpgsqlParameter("devs", NpgsqlDbType.Array | NpgsqlDbType.Uuid) { Value = devIds.ToArray() },
-                    new NpgsqlParameter("rxs", NpgsqlDbType.Array | NpgsqlDbType.Bigint) { Value = devRx.ToArray() },
-                    new NpgsqlParameter("txs", NpgsqlDbType.Array | NpgsqlDbType.Bigint) { Value = devTx.ToArray() },
-                    new NpgsqlParameter("secs", NpgsqlDbType.Array | NpgsqlDbType.Integer) { Value = devSec.ToArray() },
+                    new NpgsqlParameter("devs", NpgsqlDbType.Array | NpgsqlDbType.Uuid) { Value = list.Select(x => x.Key).ToArray() },
+                    new NpgsqlParameter("rxs", NpgsqlDbType.Array | NpgsqlDbType.Bigint) { Value = list.Select(x => x.Value.Rx).ToArray() },
+                    new NpgsqlParameter("txs", NpgsqlDbType.Array | NpgsqlDbType.Bigint) { Value = list.Select(x => x.Value.Tx).ToArray() },
+                    new NpgsqlParameter("secs", NpgsqlDbType.Array | NpgsqlDbType.Integer) { Value = list.Select(x => x.Value.Sec).ToArray() },
+                    new NpgsqlParameter("xrxs", NpgsqlDbType.Array | NpgsqlDbType.Bigint) { Value = list.Select(x => x.Value.XRx).ToArray() },
+                    new NpgsqlParameter("xtxs", NpgsqlDbType.Array | NpgsqlDbType.Bigint) { Value = list.Select(x => x.Value.XTx).ToArray() },
                     new NpgsqlParameter("hourSpan", NpgsqlDbType.Smallint) { Value = UsageMath.HourSpan },
                     new NpgsqlParameter("daySpan", NpgsqlDbType.Smallint) { Value = UsageMath.DaySpan },
                     new NpgsqlParameter("hour", NpgsqlDbType.TimestampTz) { Value = hour },
@@ -124,14 +209,29 @@ public static class UsageRecorder
         }
 
         await db.Database.ExecuteSqlRawAsync("""
-            INSERT INTO "ServerUsage" ("ServerId","Span","Bucket","RxBytes","TxBytes","PeakPeers","PeerSeconds","Reports")
-            VALUES (@server, @hourSpan, @hour, @rx, @tx, @peak, @psec, 1), (@server, @daySpan, @day, @rx, @tx, @peak, @psec, 1)
+            INSERT INTO "ServerUsage" ("ServerId","Span","Bucket","RxBytes","TxBytes","PeakPeers","PeerSeconds","Reports",
+              "XrayRxBytes","XrayTxBytes","CpuSamples","CpuSum","CpuMax","Load1Max","MemUsedMax","MemTotal","NetRxBytes","NetTxBytes","DiskFree","DiskTotal")
+            SELECT @server, s.span, s.bucket, @rx, @tx, @peak, @psec, 1,
+              @xrx, @xtx, @cpun, @cpu, @cpu, @load, @memUsed, @memTotal, @netRx, @netTx, @diskFree, @diskTotal
+            FROM (VALUES (@hourSpan, @hour), (@daySpan, @day)) AS s(span, bucket)
             ON CONFLICT ("ServerId","Span","Bucket") DO UPDATE SET
               "RxBytes" = "ServerUsage"."RxBytes" + EXCLUDED."RxBytes",
               "TxBytes" = "ServerUsage"."TxBytes" + EXCLUDED."TxBytes",
               "PeakPeers" = GREATEST("ServerUsage"."PeakPeers", EXCLUDED."PeakPeers"),
               "PeerSeconds" = "ServerUsage"."PeerSeconds" + EXCLUDED."PeerSeconds",
-              "Reports" = "ServerUsage"."Reports" + 1
+              "Reports" = "ServerUsage"."Reports" + 1,
+              "XrayRxBytes" = "ServerUsage"."XrayRxBytes" + EXCLUDED."XrayRxBytes",
+              "XrayTxBytes" = "ServerUsage"."XrayTxBytes" + EXCLUDED."XrayTxBytes",
+              "CpuSamples" = "ServerUsage"."CpuSamples" + EXCLUDED."CpuSamples",
+              "CpuSum" = "ServerUsage"."CpuSum" + EXCLUDED."CpuSum",
+              "CpuMax" = GREATEST("ServerUsage"."CpuMax", EXCLUDED."CpuMax"),
+              "Load1Max" = GREATEST("ServerUsage"."Load1Max", EXCLUDED."Load1Max"),
+              "MemUsedMax" = GREATEST("ServerUsage"."MemUsedMax", EXCLUDED."MemUsedMax"),
+              "MemTotal" = CASE WHEN EXCLUDED."MemTotal" > 0 THEN EXCLUDED."MemTotal" ELSE "ServerUsage"."MemTotal" END,
+              "NetRxBytes" = "ServerUsage"."NetRxBytes" + EXCLUDED."NetRxBytes",
+              "NetTxBytes" = "ServerUsage"."NetTxBytes" + EXCLUDED."NetTxBytes",
+              "DiskFree" = CASE WHEN EXCLUDED."DiskTotal" > 0 THEN EXCLUDED."DiskFree" ELSE "ServerUsage"."DiskFree" END,
+              "DiskTotal" = CASE WHEN EXCLUDED."DiskTotal" > 0 THEN EXCLUDED."DiskTotal" ELSE "ServerUsage"."DiskTotal" END
             """,
             [
                 new NpgsqlParameter("server", NpgsqlDbType.Uuid) { Value = serverId },
@@ -143,6 +243,17 @@ public static class UsageRecorder
                 new NpgsqlParameter("tx", NpgsqlDbType.Bigint) { Value = serverTx },
                 new NpgsqlParameter("peak", NpgsqlDbType.Integer) { Value = onlinePeers },
                 new NpgsqlParameter("psec", NpgsqlDbType.Bigint) { Value = peerSeconds },
+                new NpgsqlParameter("xrx", NpgsqlDbType.Bigint) { Value = xrayRx },
+                new NpgsqlParameter("xtx", NpgsqlDbType.Bigint) { Value = xrayTx },
+                new NpgsqlParameter("cpun", NpgsqlDbType.Integer) { Value = cpu == null ? 0 : 1 },
+                new NpgsqlParameter("cpu", NpgsqlDbType.Double) { Value = cpu ?? 0 },
+                new NpgsqlParameter("load", NpgsqlDbType.Double) { Value = load1 },
+                new NpgsqlParameter("memUsed", NpgsqlDbType.Bigint) { Value = memUsed },
+                new NpgsqlParameter("memTotal", NpgsqlDbType.Bigint) { Value = memTotal },
+                new NpgsqlParameter("netRx", NpgsqlDbType.Bigint) { Value = netRx },
+                new NpgsqlParameter("netTx", NpgsqlDbType.Bigint) { Value = netTx },
+                new NpgsqlParameter("diskFree", NpgsqlDbType.Bigint) { Value = diskFree },
+                new NpgsqlParameter("diskTotal", NpgsqlDbType.Bigint) { Value = diskTotal },
             ], ct);
     }
 

@@ -223,6 +223,9 @@ public sealed class DeviceUsage
     public long RxBytes { get; set; }
     public long TxBytes { get; set; }
     public int OnlineSeconds { get; set; }
+    /// <summary>Из них через Xray (подмножество RxBytes/TxBytes).</summary>
+    public long XrayRxBytes { get; set; }
+    public long XrayTxBytes { get; set; }
 }
 
 /// <summary>История сервера выхода (все пиры, включая не опознанные): объём, пик и сумма времени подключённых.</summary>
@@ -236,6 +239,22 @@ public sealed class ServerUsage
     public int PeakPeers { get; set; }
     public long PeerSeconds { get; set; }
     public int Reports { get; set; }
+    /// <summary>Из них через Xray (подмножество RxBytes/TxBytes).</summary>
+    public long XrayRxBytes { get; set; }
+    public long XrayTxBytes { get; set; }
+    /// <summary>Нагрузка (агент 0.2+): сумма и число замеров процессора — среднее = CpuSum / CpuSamples.</summary>
+    public int CpuSamples { get; set; }
+    public double CpuSum { get; set; }
+    public double CpuMax { get; set; }
+    public double Load1Max { get; set; }
+    public long MemUsedMax { get; set; }
+    public long MemTotal { get; set; }
+    /// <summary>Байты сетевого интерфейса сервера (весь трафик машины, VPN учитывается дважды: вход и выход).</summary>
+    public long NetRxBytes { get; set; }
+    public long NetTxBytes { get; set; }
+    /// <summary>Свободно на диске по последнему замеру в интервале.</summary>
+    public long DiskFree { get; set; }
+    public long DiskTotal { get; set; }
 }
 
 /// <summary>Cooperative native-client slot allocation; it does not enforce traffic limits.</summary>

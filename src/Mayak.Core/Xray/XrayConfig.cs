@@ -146,6 +146,80 @@ public static class XrayConfig
         return root.ToJsonString(Indented);
     }
 
+    // ───── Счётчики трафика по клиентам (Stats API) ─────
+    // Только объём по email клиента (правило 5): Xray считает байты вверх и вниз, адресов и сайтов в счётчиках нет.
+    // API слушает 127.0.0.1 внутри контейнера и наружу не публикуется.
+
+    public const string StatsApiListen = "127.0.0.1:10085";
+
+    /// <summary>Включены ли в server.json счётчики по клиентам в том виде, в каком их включает Маяк.</summary>
+    public static bool HasUserStats(string serverJson)
+    {
+        var root = JsonNode.Parse(serverJson)?.AsObject();
+        if (root == null || root["stats"] is not JsonObject) return false;
+        var api = root["api"] as JsonObject;
+        if (api?["listen"]?.GetValueKind() != JsonValueKind.String || api["listen"]!.GetValue<string>() != StatsApiListen) return false;
+        if (api["services"] is not JsonArray services || !services.Any(s => s?.GetValueKind() == JsonValueKind.String && s.GetValue<string>() == "StatsService")) return false;
+        var level = root["policy"]?["levels"]?["0"] as JsonObject;
+        return level?["statsUserUplink"]?.GetValueKind() == JsonValueKind.True && level["statsUserDownlink"]?.GetValueKind() == JsonValueKind.True;
+    }
+
+    /// <summary>Добавляет в server.json счётчики по клиентам (stats, api на 127.0.0.1, policy уровня 0). Остальное не меняется.</summary>
+    public static string EnableUserStats(string serverJson)
+    {
+        var root = JsonNode.Parse(serverJson)!.AsObject();
+        if (root["stats"] is not JsonObject) root["stats"] = new JsonObject();
+        root["api"] = new JsonObject
+        {
+            ["tag"] = "api",
+            ["listen"] = StatsApiListen,
+            ["services"] = new JsonArray("StatsService"),
+        };
+        var policy = root["policy"] as JsonObject ?? new JsonObject();
+        root["policy"] = policy;
+        var levels = policy["levels"] as JsonObject ?? new JsonObject();
+        policy["levels"] = levels;
+        var level0 = levels["0"] as JsonObject ?? new JsonObject();
+        levels["0"] = level0;
+        level0["statsUserUplink"] = true;
+        level0["statsUserDownlink"] = true;
+        return root.ToJsonString(Indented);
+    }
+
+    public sealed record UserTraffic(string Email, long UplinkBytes, long DownlinkBytes);
+
+    /// <summary>
+    /// Разбирает вывод «xray api statsquery -pattern user&gt;&gt;&gt;»: {"stat":[{"name":"user&gt;&gt;&gt;EMAIL&gt;&gt;&gt;traffic&gt;&gt;&gt;uplink","value":N}]}.
+    /// Нулевое значение Xray не выводит; число может прийти строкой.
+    /// </summary>
+    public static List<UserTraffic> ParseUserStats(string output)
+    {
+        var start = output.IndexOf('{');
+        if (start < 0) return new();
+        JsonNode? root;
+        try { root = JsonNode.Parse(output[start..]); }
+        catch (JsonException) { return new(); }
+        var map = new Dictionary<string, (long Up, long Down)>(StringComparer.Ordinal);
+        foreach (var item in root?["stat"] as JsonArray ?? new JsonArray())
+        {
+            var name = item?["name"]?.GetValueKind() == JsonValueKind.String ? item["name"]!.GetValue<string>() : null;
+            if (name == null) continue;
+            var parts = name.Split(">>>");
+            if (parts.Length != 4 || parts[0] != "user" || parts[2] != "traffic" || parts[1].Length == 0) continue;
+            long value = 0;
+            var v = item!["value"];
+            if (v?.GetValueKind() == JsonValueKind.Number) value = v.GetValue<long>();
+            else if (v?.GetValueKind() == JsonValueKind.String && long.TryParse(v.GetValue<string>(), out var s)) value = s;
+            value = Math.Max(0, value);
+            var cur = map.GetValueOrDefault(parts[1]);
+            if (parts[3] == "uplink") cur.Up = value;
+            else if (parts[3] == "downlink") cur.Down = value;
+            else continue;
+            map[parts[1]] = cur;
+        }
+        return map.Select(kv => new UserTraffic(kv.Key, kv.Value.Up, kv.Value.Down)).OrderBy(x => x.Email, StringComparer.Ordinal).ToList();
+    }
+
     /// <summary>Клиентский конфиг Xray (native config AmneziaVPN): SOCKS на 127.0.0.1 + VLESS outbound.</summary>
     public static string BuildClientJson(string host, XrayEndpoint ep, string clientId, int localSocksPort = LocalSocksPort)
     {

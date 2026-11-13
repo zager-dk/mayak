@@ -2,6 +2,7 @@ using System.Text.Json;
 using Mayak.Api.Data;
 using Mayak.Api.Services;
 using Mayak.Core.Agent;
+using Mayak.Core.Xray;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 
@@ -31,6 +32,74 @@ Check("попытка: освобождена без подтверждения 
 Check("попытка: без подтверждения дольше 2 мин — неудачна", StatsService.StateOf(now0, null, null, now0.AddMinutes(3)) == StatsService.AttemptState.Failed);
 Check("попытка: идёт меньше 2 мин — ещё не итог", StatsService.StateOf(now0, null, null, now0.AddMinutes(1)) == StatsService.AttemptState.Pending);
 Check("медиана и 90-й перцентиль", StatsService.Percentile([1, 2, 3, 4, 100], .5) == 3 && StatsService.Percentile([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], .9) == 9.1 && StatsService.Percentile([], .5) == null);
+
+// ───── 1б. Нагрузка сервера и счётчики Xray (без БД) ─────
+const string serverJson = """{"log":{"loglevel":"error"},"inbounds":[{"port":443,"protocol":"vless","settings":{"clients":[{"id":"x","email":"mayak:1"}],"decryption":"none"},"streamSettings":{"network":"xhttp","security":"reality"}}],"outbounds":[{"protocol":"freedom"}]}""";
+Check("Xray: без счётчиков — не включены", !XrayConfig.HasUserStats(serverJson));
+var withStats = XrayConfig.EnableUserStats(serverJson);
+Check("Xray: после включения — включены, клиенты и inbound на месте",
+    XrayConfig.HasUserStats(withStats) && XrayConfig.ReadClients(withStats).Single().Email == "mayak:1" &&
+    JsonDocument.Parse(withStats).RootElement.GetProperty("inbounds").GetArrayLength() == 1);
+Check("Xray: включение повторно ничего не ломает", XrayConfig.HasUserStats(XrayConfig.EnableUserStats(withStats)));
+Check("Xray: API слушает только 127.0.0.1", JsonDocument.Parse(withStats).RootElement.GetProperty("api").GetProperty("listen").GetString() == "127.0.0.1:10085");
+Check("Xray: замена клиентов сохраняет счётчики", XrayConfig.HasUserStats(XrayConfig.ReplaceClients(withStats, [new XrayConfig.Client("y", "mayak:2", "")])));
+var statsOut = """
+{
+    "stat": [
+        { "name": "user>>>mayak:aa>>>traffic>>>downlink" },
+        { "name": "user>>>mayak:aa>>>traffic>>>uplink", "value": 79 },
+        { "name": "user>>>mayak:bb>>>traffic>>>downlink", "value": "123456789012" },
+        { "name": "inbound>>>api>>>traffic>>>uplink", "value": 5 }
+    ]
+}
+""";
+var parsed = XrayConfig.ParseUserStats(statsOut);
+Check("Xray: разбор statsquery — ноль опущен, число строкой, чужие счётчики пропущены",
+    parsed.Count == 2 && parsed[0] == new XrayConfig.UserTraffic("mayak:aa", 79, 0) && parsed[1] == new XrayConfig.UserTraffic("mayak:bb", 0, 123456789012));
+Check("Xray: пустой и битый вывод — пусто", XrayConfig.ParseUserStats("{}").Count == 0 && XrayConfig.ParseUserStats("failed to dial").Count == 0);
+var devGuid = Guid.NewGuid();
+Check("Xray: email → устройство", UsageRecorder.DeviceFromXrayEmail("mayak:" + devGuid.ToString("N")) == devGuid &&
+    UsageRecorder.DeviceFromXrayEmail("mayak:probe") == null && UsageRecorder.DeviceFromXrayEmail(devGuid.ToString("N")) == null);
+
+string HostOut(long user, long idle, long rx, long tx) => $"""
+@@STAT
+cpu  {user} 0 0 {idle} 0 0 0 0 0 0
+@@LOAD
+0.42 0.30 0.20 3/250 1234
+@@MEM
+MemTotal:        2015212 kB
+MemAvailable:    1338148 kB
+@@UPTIME
+1209600.55 1000.00
+@@NPROC
+1
+@@DEV
+eth0
+@@NET
+Inter-|   Receive                                                |  Transmit
+ face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
+    lo: 999999 10 0 0 0 0 0 0 999999 10 0 0 0 0 0 0
+  eth0: {rx} 100 0 0 0 0 0 0 {tx} 100 0 0 0 0 0 0
+  awg0: 5 1 0 0 0 0 0 0 5 1 0 0 0 0 0 0
+@@DF
+50884108288 46819471360
+""";
+var (h1, c1) = HostStatsReader.Parse(HostOut(1000, 9000, 1_000_000, 2_000_000), null);
+Check("нагрузка: первый замер — без процента процессора, остальное есть",
+    h1.CpuPercent == null && c1 == new HostStatsReader.CpuTimes(9000, 10000) && h1.Cpus == 1 && h1.Load1 == 0.42 &&
+    h1.MemTotalBytes == 2015212L * 1024 && h1.MemAvailableBytes == 1338148L * 1024 && h1.UptimeSeconds == 1209600 &&
+    h1.NetInterface == "eth0" && h1.NetRxBytes == 1_000_000 && h1.NetTxBytes == 2_000_000 && h1.DiskTotalBytes == 50884108288 && h1.DiskFreeBytes == 46819471360);
+var (h2, _) = HostStatsReader.Parse(HostOut(1300, 9700, 1_500_000, 2_900_000), c1);
+Check("нагрузка: процессор по разнице двух замеров", h2.CpuPercent == 30);
+var (h3, _) = HostStatsReader.Parse(HostOut(1300, 9700, 1, 1).Replace("@@DEV\neth0\n", "@@DEV\n"), null);
+Check("нагрузка: без маршрута по умолчанию — самый нагруженный физический интерфейс", h3.NetInterface == "eth0");
+var (h4, c4) = HostStatsReader.Parse("garbage", null);
+Check("нагрузка: мусор не роняет разбор", c4 == null && h4.MemTotalBytes == 0 && h4.NetInterface == "");
+var lr = JsonSerializer.Serialize(new AgentReport { At = DateTime.UtcNow, Host = h2, XrayStatsEnabled = true });
+var latest = JsonDocument.Parse(JsonSerializer.Serialize(StatsService.LatestHost(lr, DateTime.UtcNow))).RootElement;
+Check("нагрузка: последняя из LastReport — доли и свежесть",
+    latest.GetProperty("cpu").GetDouble() == 30 && latest.GetProperty("memPercent").GetDouble() == 33.6 && latest.GetProperty("fresh").GetBoolean() && latest.GetProperty("xrayStats").GetBoolean());
+Check("нагрузка: старый отчёт без Host — нет данных", StatsService.LatestHost(JsonSerializer.Serialize(new AgentReport()), DateTime.UtcNow) == null && StatsService.LatestHost("{bad", DateTime.UtcNow) == null);
 
 // ───── 2. База ─────
 var server = args.ElementAtOrDefault(0) ?? "Host=127.0.0.1;Port=55432;Username=postgres";
@@ -134,6 +203,61 @@ try
         var sum = j(await StatsService.AccountsSummaryAsync(db, now));
         var row = sum.EnumerateArray().Single();
         Check("список людей: трафик 30 дней и неудачи за сутки", row.GetProperty("down30").GetInt64() == 8_000 && row.GetProperty("failed24h").GetInt32() == 3);
+    }
+
+    // Xray и нагрузка: отдельный сервер, Ноутбук ходит через Xray.
+    var hel = Guid.NewGuid();
+    await using (var db = new MayakDb(options))
+    {
+        db.Servers.Add(new Server { Id = hel, Name = "Хельсинки", City = "Хельсинки", Role = ServerRoles.Exit, Host = "192.0.2.3", AgentTokenHash = "t3", LastSeen = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+    }
+    async Task ReportFull(DateTime at, AgentReport r)
+    {
+        await using var db = new MayakDb(options);
+        await using var tx = await db.Database.BeginTransactionAsync();
+        await UsageRecorder.RecordAsync(db, hel, r, at);
+        await db.SaveChangesAsync();
+        await tx.CommitAsync();
+    }
+    AgentXrayUserStats XU(Guid dev, long up, long down) => new() { Email = "mayak:" + dev.ToString("N"), UplinkBytes = up, DownlinkBytes = down };
+    AgentHostStats HS(double? cpu, long avail, long rx, long tx) => new() { CpuPercent = cpu, Cpus = 1, Load1 = 0.5, MemTotalBytes = 2_000_000_000, MemAvailableBytes = avail, DiskTotalBytes = 50_000_000_000, DiskFreeBytes = 40_000_000_000, NetInterface = "eth0", NetRxBytes = rx, NetTxBytes = tx, UptimeSeconds = 100 };
+    var t1 = now; // 21:01 UTC, всё в одном часе
+    await ReportFull(t1, new AgentReport { XrayStatsEnabled = true, XrayUsers = [XU(devB, 1_000, 5_000), new() { Email = "mayak:probe", UplinkBytes = 9, DownlinkBytes = 9 }, XU(Guid.NewGuid(), 7, 7)], Host = HS(null, 1_500_000_000, 1_000_000, 2_000_000) });
+    await ReportFull(t1.AddSeconds(30), new AgentReport { XrayStatsEnabled = true, XrayUsers = [XU(devB, 3_000, 25_000)], Host = HS(25, 1_000_000_000, 1_500_000, 2_900_000) });
+    await ReportFull(t1.AddSeconds(60), new AgentReport { XrayStatsEnabled = true, XrayUsers = [XU(devB, 3_000, 25_000)], Host = HS(75, 1_200_000_000, 1_600_000, 3_000_000) });
+    await ReportFull(t1.AddSeconds(90), new AgentReport { XrayStatsEnabled = false, XrayUsers = [XU(devB, 9_000_000, 9_000_000)] }); // старый агент: ни Xray, ни нагрузки
+    await using (var db = new MayakDb(options))
+    {
+        var hour = UsageMath.HourBucket(t1);
+        var d = await db.DeviceUsage.AsNoTracking().SingleAsync(x => x.DeviceId == devB && x.ServerId == hel && x.Span == 1 && x.Bucket == hour);
+        Check("Xray: устройство — прирост после базы, отдельно доля Xray, 30 с в сети", d.RxBytes == 2_000 && d.TxBytes == 20_000 && d.XrayRxBytes == 2_000 && d.XrayTxBytes == 20_000 && d.OnlineSeconds == 30);
+        var u = await db.ServerUsage.AsNoTracking().SingleAsync(x => x.ServerId == hel && x.Span == 1 && x.Bucket == hour);
+        Check("Xray: сервер — трафик, пик, неизвестные и служебные клиенты не учтены", u.RxBytes == 2_000 && u.TxBytes == 20_000 && u.XrayRxBytes == 2_000 && u.XrayTxBytes == 20_000 && u.PeakPeers == 1 && u.Reports == 4);
+        Check("нагрузка: процессор — 2 замера, среднее 50, пик 75", u.CpuSamples == 2 && u.CpuSum == 100 && u.CpuMax == 75);
+        Check("нагрузка: память — максимум занятой, диск и сеть по разнице", u.MemUsedMax == 1_000_000_000 && u.MemTotal == 2_000_000_000 && u.DiskTotal == 50_000_000_000 && u.DiskFree == 40_000_000_000 && u.NetRxBytes == 600_000 && u.NetTxBytes == 1_000_000 && u.Load1Max == 0.5);
+        var keys = await db.PeerCounters.AsNoTracking().Where(c => c.ServerId == hel).Select(c => c.PublicKey).OrderBy(k => k).ToListAsync();
+        Check("счётчики: Xray по устройству и сеть сервера, без служебных", keys.SequenceEqual(new[] { "host:net:eth0", UsageRecorder.XrayKey(devB) }.OrderBy(k => k)));
+    }
+    await using (var db = new MayakDb(options))
+    {
+        var j = (object o) => JsonDocument.Parse(JsonSerializer.Serialize(o)).RootElement;
+        var n2 = t1.AddSeconds(100);
+        var srv = j((await StatsService.ServerAsync(db, hel, n2, 30))!);
+        var nowList = srv.GetProperty("now").EnumerateArray().ToList();
+        Check("сервер: подключён сейчас через Xray", nowList.Count == 1 && nowList[0].GetProperty("device").GetString() == "Ноутбук" && nowList[0].GetProperty("protocol").GetString() == "Xray");
+        var hr = srv.GetProperty("hourly").EnumerateArray().Last();
+        Check("сервер: час — процессор, память, сеть, Xray", hr.GetProperty("cpu").GetDouble() == 50 && hr.GetProperty("cpuMax").GetDouble() == 75 && hr.GetProperty("memUsed").GetInt64() == 1_000_000_000 && hr.GetProperty("netIn").GetInt64() == 600_000 && hr.GetProperty("xrayDown").GetInt64() == 20_000);
+        Check("сервер: итог — Xray и средний процессор", srv.GetProperty("totals").GetProperty("xrayDown").GetInt64() == 20_000 && srv.GetProperty("totals").GetProperty("cpu").GetDouble() == 50);
+        var acc = j((await StatsService.AccountAsync(db, accId, n2, 30))!);
+        var laptop = acc.GetProperty("devices").EnumerateArray().Single(x => x.GetProperty("Name").GetString() == "Ноутбук");
+        Check("человек: устройство в сети через Xray на Хельсинки", laptop.GetProperty("online").GetBoolean() && laptop.GetProperty("protocol").GetString() == "Xray" && laptop.GetProperty("server").GetString() == "Хельсинки" && laptop.GetProperty("xrayDown").GetInt64() == 20_000);
+        var ov = j(await StatsService.OverviewAsync(db, n2, 30));
+        Check("сводка: в сети через Xray и трафик Xray", ov.GetProperty("totals").GetProperty("onlineXrayNow").GetInt32() == 1 && ov.GetProperty("totals").GetProperty("xrayDown").GetInt64() == 20_000);
+        var helRow = ov.GetProperty("servers").EnumerateArray().Single(s => s.GetProperty("Name").GetString() == "Хельсинки");
+        Check("сводка: процессор сервера за 24 ч", helRow.GetProperty("cpu24hAvg").GetDouble() == 50 && helRow.GetProperty("cpu24hMax").GetDouble() == 75);
+        var later = j(await StatsService.OverviewAsync(db, t1.AddMinutes(10), 30));
+        Check("сводка: без трафика 3+ мин Xray-устройство уже не в сети", later.GetProperty("totals").GetProperty("onlineXrayNow").GetInt32() == 0);
     }
 
     // Сроки хранения и каскадное удаление.

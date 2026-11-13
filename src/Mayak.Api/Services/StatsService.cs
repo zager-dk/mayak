@@ -1,4 +1,6 @@
+using System.Text.Json;
 using Mayak.Api.Data;
+using Mayak.Core.Agent;
 using Microsoft.EntityFrameworkCore;
 
 namespace Mayak.Api.Services;
@@ -6,7 +8,8 @@ namespace Mayak.Api.Services;
 /// <summary>
 /// Статистика для админки: сводка, человек, сервер. Источники — история использования (объём и время в сети),
 /// попытки подключения (AwgAllocations) и проверки с Москвы. Направления: down — к пользователю (Tx сервера),
-/// up — от пользователя (Rx сервера). Трафик пути Xray агент пока не считает.
+/// up — от пользователя (Rx сервера). Трафик Xray входит в общие объёмы и отдельно показан как xray*
+/// (агент 0.2+). Нагрузка серверов — из отчётов агента 0.2+.
 /// </summary>
 public static class StatsService
 {
@@ -30,6 +33,45 @@ public static class StatsService
     }
 
     sealed record Attempt(Guid DeviceId, Guid ServerId, DateTime CreatedAt, DateTime? ProvenAt, DateTime? ReleasedAt);
+
+    /// <summary>Последняя нагрузка сервера из сохранённого отчёта агента. null — агент её не присылает (старая версия).</summary>
+    public static object? LatestHost(string? lastReport, DateTime now)
+    {
+        if (string.IsNullOrEmpty(lastReport)) return null;
+        AgentReport? r;
+        try { r = JsonSerializer.Deserialize<AgentReport>(lastReport); }
+        catch (JsonException) { return null; }
+        if (r?.Host is not { } h || h.MemTotalBytes <= 0) return null;
+        var memUsed = Math.Clamp(h.MemTotalBytes - h.MemAvailableBytes, 0, h.MemTotalBytes);
+        return new
+        {
+            at = r.At, fresh = r.At > now.AddMinutes(-3),
+            cpu = h.CpuPercent, cpus = h.Cpus, load1 = Math.Round(h.Load1, 2),
+            memUsed, memTotal = h.MemTotalBytes, memPercent = Math.Round(100.0 * memUsed / h.MemTotalBytes, 1),
+            diskFree = h.DiskFreeBytes, diskTotal = h.DiskTotalBytes,
+            diskPercent = h.DiskTotalBytes > 0 ? Math.Round(100.0 * (h.DiskTotalBytes - h.DiskFreeBytes) / h.DiskTotalBytes, 1) : (double?)null,
+            uptimeSeconds = h.UptimeSeconds, xrayStats = r.XrayStatsEnabled,
+        };
+    }
+
+    static double? CpuAvg(IEnumerable<ServerUsage> rows)
+    {
+        var l = rows.ToList();
+        var n = l.Sum(u => u.CpuSamples);
+        return n == 0 ? null : Math.Round(l.Sum(u => u.CpuSum) / n, 1);
+    }
+
+    /// <summary>Устройства, у которых через Xray был трафик за последние 3 минуты, и время последнего трафика Xray по устройству.</summary>
+    static async Task<Dictionary<Guid, (Guid ServerId, DateTime At)>> XrayLastAsync(MayakDb db, CancellationToken ct)
+    {
+        var rows = await db.PeerCounters.AsNoTracking().Where(c => c.PublicKey.StartsWith(UsageRecorder.XrayKeyPrefix) && c.LastHandshake != null)
+            .Select(c => new { c.ServerId, c.PublicKey, c.LastHandshake }).ToListAsync(ct);
+        var map = new Dictionary<Guid, (Guid, DateTime)>();
+        foreach (var r in rows)
+            if (Guid.TryParseExact(r.PublicKey[UsageRecorder.XrayKeyPrefix.Length..], "N", out var id) && (!map.TryGetValue(id, out var cur) || r.LastHandshake > cur.Item2))
+                map[id] = (r.ServerId, r.LastHandshake!.Value);
+        return map;
+    }
 
     /// <summary>Итог по попыткам: всего, подтверждено, неудачных, медиана и 90-й перцентиль времени до подключения (с).</summary>
     static object AttemptSummary(IReadOnlyCollection<Attempt> list, DateTime now)
@@ -81,11 +123,15 @@ public static class StatsService
         var accounts = await db.Accounts.AsNoTracking().Select(a => new { a.Id, a.Name, a.Enabled, a.PaidUntil, a.Role }).ToListAsync(ct);
         var devices = await db.Devices.AsNoTracking().Select(d => new { d.Id, d.AccountId, d.Name, d.Kind, d.AppVersion, d.OsVersion, d.LastHandshake, d.Enabled }).ToListAsync(ct);
         var servers = await db.Servers.AsNoTracking().Where(s => s.Role == ServerRoles.Exit).OrderBy(s => s.Name)
-            .Select(s => new { s.Id, s.Name, s.City, s.Country, s.Active, s.AutoSelectEnabled, s.LastSeen, s.AgentVersion, s.ProvisioningStatus, s.NativeCapacity }).ToListAsync(ct);
+            .Select(s => new { s.Id, s.Name, s.City, s.Country, s.Active, s.AutoSelectEnabled, s.LastSeen, s.AgentVersion, s.ProvisioningStatus, s.NativeCapacity, s.LastReport }).ToListAsync(ct);
+        var xrayLast = await XrayLastAsync(db, ct);
+        var xrayOnline = xrayLast.Where(x => x.Value.At > onlineFrom).Select(x => x.Key).ToHashSet();
+        bool OnlineDev(Guid id, DateTime? hs) => hs > onlineFrom || xrayOnline.Contains(id);
+        DateTime? LastSeenDev(Guid id, DateTime? hs) => xrayLast.TryGetValue(id, out var x) && (hs == null || x.At > hs) ? x.At : hs;
         var serverDaily = await db.ServerUsage.AsNoTracking().Where(u => u.Span == UsageMath.DaySpan && u.Bucket >= from).ToListAsync(ct);
         var serverHourly = await db.ServerUsage.AsNoTracking().Where(u => u.Span == UsageMath.HourSpan && u.Bucket >= hour24).ToListAsync(ct);
         var deviceDaily = await db.DeviceUsage.AsNoTracking().Where(u => u.Span == UsageMath.DaySpan && u.Bucket >= from)
-            .Select(u => new { u.DeviceId, u.ServerId, u.Bucket, u.RxBytes, u.TxBytes, u.OnlineSeconds }).ToListAsync(ct);
+            .Select(u => new { u.DeviceId, u.ServerId, u.Bucket, u.RxBytes, u.TxBytes, u.OnlineSeconds, u.XrayRxBytes, u.XrayTxBytes }).ToListAsync(ct);
         var peersNow = await db.PeerCounters.AsNoTracking().Where(c => c.LastHandshake > onlineFrom).GroupBy(c => c.ServerId)
             .Select(g => new { ServerId = g.Key, Count = g.Count() }).ToDictionaryAsync(x => x.ServerId, x => x.Count, ct);
         var attempts = await AttemptsAsync(db, from, null, null, ct);
@@ -107,6 +153,7 @@ public static class StatsService
             {
                 day = UsageMath.DayLabel(d),
                 down = su.Sum(u => u.TxBytes), up = su.Sum(u => u.RxBytes),
+                xrayDown = su.Sum(u => u.XrayTxBytes), xrayUp = su.Sum(u => u.XrayRxBytes),
                 devices = du.Select(u => u.DeviceId).Distinct().Count(),
                 accounts = du.Select(u => accountOf.GetValueOrDefault(u.DeviceId)).Distinct().Count(),
                 peak = su.Count == 0 ? 0 : su.Sum(u => u.PeakPeers),
@@ -132,6 +179,10 @@ public static class StatsService
                 peak24h = h.Count == 0 ? 0 : h.Max(u => u.PeakPeers),
                 down24h = h.Sum(u => u.TxBytes), up24h = h.Sum(u => u.RxBytes),
                 down = d.Sum(u => u.TxBytes), up = d.Sum(u => u.RxBytes),
+                xrayDown24h = h.Sum(u => u.XrayTxBytes), xrayUp24h = h.Sum(u => u.XrayRxBytes),
+                host = LatestHost(s.LastReport, now),
+                cpu24hAvg = CpuAvg(h), cpu24hMax = h.Any(u => u.CpuSamples > 0) ? Math.Round(h.Where(u => u.CpuSamples > 0).Max(u => u.CpuMax), 1) : (double?)null,
+                cpu1hAvg = CpuAvg(h.Where(u => u.Bucket >= UsageMath.HourBucket(now).AddHours(-1))),
                 attempts7d = AttemptSummary(attempts.Where(a => a.ServerId == s.Id && a.CreatedAt >= week).ToList(), now),
                 tcpUptime24h = tcp.Count == 0 ? (double?)null : Math.Round(100.0 * tcp.Count(p => p.Ok) / tcp.Count, 1),
                 tcpLastOk = lastTcp?.Ok,
@@ -154,6 +205,16 @@ public static class StatsService
                 attention.Add(new { level = "bad", kind = "server", id = s.Id, text = $"{s.Name}: агент не выходит на связь" });
             if ((s.Active || s.AutoSelectEnabled) && s.tcpLastOk == false)
                 attention.Add(new { level = "bad", kind = "server", id = s.Id, text = $"{s.Name}: порт недоступен с Москвы" });
+            if (s.cpu1hAvg >= 80)
+                attention.Add(new { level = "warn", kind = "server", id = s.Id, text = $"{s.Name}: процессор загружен в среднем на {s.cpu1hAvg:0}% за последний час" });
+            if (s.host != null && s.reporting)
+            {
+                var hj = JsonSerializer.SerializeToElement(s.host);
+                if (hj.GetProperty("memPercent").GetDouble() >= 90)
+                    attention.Add(new { level = "warn", kind = "server", id = s.Id, text = $"{s.Name}: память занята на {hj.GetProperty("memPercent").GetDouble():0}%" });
+                if (hj.GetProperty("diskPercent").ValueKind == JsonValueKind.Number && hj.GetProperty("diskPercent").GetDouble() >= 90)
+                    attention.Add(new { level = "warn", kind = "server", id = s.Id, text = $"{s.Name}: диск заполнен на {hj.GetProperty("diskPercent").GetDouble():0}%" });
+            }
         }
         var day1 = now.AddDays(-1);
         foreach (var g in attempts.Where(a => a.CreatedAt >= day1).GroupBy(a => a.DeviceId))
@@ -169,7 +230,7 @@ public static class StatsService
             attention.Add(new { level = a.PaidUntil < now ? "bad" : "warn", kind = "account", id = a.Id, text = a.PaidUntil < now ? $"{a.Name}: срок доступа истёк" : $"{a.Name}: доступ заканчивается {UsageMath.DayLabel(UsageMath.DayBucket(a.PaidUntil!.Value))}" });
         var waiting = accounts.Count(a => !a.Enabled);
         if (waiting > 0) attention.Add(new { level = "warn", kind = "accounts", id = (Guid?)null, text = $"Ждут одобрения: {waiting}" });
-        var stale = devices.Count(d => d.Enabled && (d.LastHandshake == null || d.LastHandshake < now.AddDays(-30)));
+        var stale = devices.Count(d => d.Enabled && (LastSeenDev(d.Id, d.LastHandshake) is not DateTime seen || seen < now.AddDays(-30)));
         if (stale > 0) attention.Add(new { level = "info", kind = "accounts", id = (Guid?)null, text = $"Устройств без подключений 30+ дней: {stale}" });
 
         var sinceHistory = await db.ServerUsage.AsNoTracking().Where(u => u.Span == UsageMath.DaySpan).MinAsync(u => (DateTime?)u.Bucket, ct);
@@ -181,14 +242,16 @@ public static class StatsService
             {
                 accounts = accounts.Count, accountsEnabled = accounts.Count(a => a.Enabled),
                 devices = devices.Count,
-                onlineNow = devices.Count(d => d.LastHandshake > onlineFrom),
-                accountsOnlineNow = devices.Where(d => d.LastHandshake > onlineFrom).Select(d => d.AccountId).Distinct().Count(),
+                onlineNow = devices.Count(d => OnlineDev(d.Id, d.LastHandshake)),
+                onlineXrayNow = devices.Count(d => xrayOnline.Contains(d.Id)),
+                accountsOnlineNow = devices.Where(d => OnlineDev(d.Id, d.LastHandshake)).Select(d => d.AccountId).Distinct().Count(),
                 activeToday = activeDevicesToday.Select(id => accountOf.GetValueOrDefault(id)).Distinct().Count(),
                 active7d = activeDevices7.Select(id => accountOf.GetValueOrDefault(id)).Distinct().Count(),
                 activeN = activeDevicesN.Select(id => accountOf.GetValueOrDefault(id)).Distinct().Count(),
                 downToday = serverDaily.Where(u => u.Bucket == today).Sum(u => u.TxBytes),
                 upToday = serverDaily.Where(u => u.Bucket == today).Sum(u => u.RxBytes),
                 down = serverDaily.Sum(u => u.TxBytes), up = serverDaily.Sum(u => u.RxBytes),
+                xrayDown = serverDaily.Sum(u => u.XrayTxBytes), xrayUp = serverDaily.Sum(u => u.XrayRxBytes),
                 peersNow = peersNow.Values.Sum(),
             },
             attempts7d = AttemptSummary(attempts.Where(a => a.CreatedAt >= week).ToList(), now),
@@ -204,6 +267,8 @@ public static class StatsService
         var from30 = UsageMath.DayBucket(now).AddDays(-29);
         var from7 = UsageMath.DayBucket(now).AddDays(-6);
         var devices = await db.Devices.AsNoTracking().Select(d => new { d.Id, d.AccountId, d.LastHandshake }).ToListAsync(ct);
+        var xrayLast = await XrayLastAsync(db, ct);
+        DateTime? Seen(Guid id, DateTime? hs) => xrayLast.TryGetValue(id, out var x) && (hs == null || x.At > hs) ? x.At : hs;
         var usage = await db.DeviceUsage.AsNoTracking().Where(u => u.Span == UsageMath.DaySpan && u.Bucket >= from30)
             .GroupBy(u => new { u.DeviceId, Week = u.Bucket >= from7 })
             .Select(g => new { g.Key.DeviceId, g.Key.Week, Rx = g.Sum(u => u.RxBytes), Tx = g.Sum(u => u.TxBytes), Sec = g.Sum(u => (long)u.OnlineSeconds) }).ToListAsync(ct);
@@ -220,8 +285,8 @@ public static class StatsService
                 accountId = g.Key,
                 down30 = u.Sum(x => x.Tx), up30 = u.Sum(x => x.Rx),
                 online7dSeconds = u.Where(x => x.Week).Sum(x => x.Sec),
-                lastSeen = g.Max(d => d.LastHandshake),
-                online = g.Any(d => d.LastHandshake > now - OnlineWindow),
+                lastSeen = g.Max(d => Seen(d.Id, d.LastHandshake)),
+                online = g.Any(d => Seen(d.Id, d.LastHandshake) > now - OnlineWindow),
                 attempts24h = at.Count, failed24h = at.Count(a => a.ProvenAt == null),
             };
         }).ToList();
@@ -241,7 +306,7 @@ public static class StatsService
         var daily = await db.DeviceUsage.AsNoTracking().Where(u => ids.Contains(u.DeviceId) && u.Span == UsageMath.DaySpan && u.Bucket >= dayList[0]).ToListAsync(ct);
         var hourly = await db.DeviceUsage.AsNoTracking().Where(u => ids.Contains(u.DeviceId) && u.Span == UsageMath.HourSpan && u.Bucket >= hourList[0]).ToListAsync(ct);
         var serverNames = await db.Servers.AsNoTracking().ToDictionaryAsync(s => s.Id, s => s.City.Length > 0 ? s.City : s.Name, ct);
-        var keys = devices.Select(d => d.AwgPublicKey).Where(k => k.Length > 0).ToList();
+        var keys = devices.Select(d => d.AwgPublicKey).Where(k => k.Length > 0).Concat(ids.Select(UsageRecorder.XrayKey)).ToList();
         var counters = await db.PeerCounters.AsNoTracking().Where(c => keys.Contains(c.PublicKey)).Select(c => new { c.ServerId, c.PublicKey, c.LastHandshake }).ToListAsync(ct);
         var attempts = (await AttemptsAsync(db, now.AddDays(-days), null, ids, ct)).OrderByDescending(a => a.CreatedAt).ToList();
         var week = now.AddDays(-7);
@@ -255,6 +320,7 @@ public static class StatsService
             totals = new
             {
                 down = daily.Sum(x => x.TxBytes), up = daily.Sum(x => x.RxBytes),
+                xrayDown = daily.Sum(x => x.XrayTxBytes), xrayUp = daily.Sum(x => x.XrayRxBytes),
                 online7dSeconds = daily.Where(x => x.Bucket >= week7).Sum(x => (long)x.OnlineSeconds),
                 activeDays = daily.Where(x => x.OnlineSeconds > 0 || x.RxBytes + x.TxBytes > 0).Select(x => x.Bucket).Distinct().Count(),
             },
@@ -262,13 +328,18 @@ public static class StatsService
             devices = devices.Select(d =>
             {
                 var u = daily.Where(x => x.DeviceId == d.Id).ToList();
-                var c = counters.Where(x => x.PublicKey == d.AwgPublicKey && d.AwgPublicKey.Length > 0).OrderByDescending(x => x.LastHandshake).FirstOrDefault();
+                var xk = UsageRecorder.XrayKey(d.Id);
+                var c = counters.Where(x => (x.PublicKey == d.AwgPublicKey && d.AwgPublicKey.Length > 0) || x.PublicKey == xk).OrderByDescending(x => x.LastHandshake).FirstOrDefault();
+                var xrayAt = counters.Where(x => x.PublicKey == xk).Max(x => x.LastHandshake);
+                var lastSeen = xrayAt != null && (d.LastHandshake == null || xrayAt > d.LastHandshake) ? xrayAt : d.LastHandshake;
                 return new
                 {
-                    d.Id, d.Name, kind = d.Kind.ToString(), d.AppVersion, d.OsVersion, d.LastHandshake, d.ConfigFetchedAt, d.CreatedAt, d.Enabled,
-                    online = d.LastHandshake > now - OnlineWindow,
+                    d.Id, d.Name, kind = d.Kind.ToString(), d.AppVersion, d.OsVersion, LastHandshake = lastSeen, d.ConfigFetchedAt, d.CreatedAt, d.Enabled,
+                    online = lastSeen > now - OnlineWindow,
+                    protocol = c == null ? null : c.PublicKey == xk ? "Xray" : "AWG",
                     server = c == null ? null : serverNames.GetValueOrDefault(c.ServerId),
                     down = u.Sum(x => x.TxBytes), up = u.Sum(x => x.RxBytes),
+                    xrayDown = u.Sum(x => x.XrayTxBytes), xrayUp = u.Sum(x => x.XrayRxBytes),
                     online7dSeconds = u.Where(x => x.Bucket >= week7).Sum(x => (long)x.OnlineSeconds),
                 };
             }).OrderByDescending(d => d.LastHandshake).ToList(),
@@ -294,15 +365,16 @@ public static class StatsService
     public static async Task<object?> ServerAsync(MayakDb db, Guid serverId, DateTime now, int days, CancellationToken ct = default)
     {
         days = Math.Clamp(days, 7, 366);
-        var server = await db.Servers.AsNoTracking().Where(s => s.Id == serverId).Select(s => new { s.Id, s.Name, s.NativeCapacity }).FirstOrDefaultAsync(ct);
+        var server = await db.Servers.AsNoTracking().Where(s => s.Id == serverId).Select(s => new { s.Id, s.Name, s.NativeCapacity, s.LastReport, s.AgentVersion }).FirstOrDefaultAsync(ct);
         if (server == null) return null;
         var dayList = Days(now, days);
         var hourList = Hours(now, 48);
         var daily = await db.ServerUsage.AsNoTracking().Where(u => u.ServerId == serverId && u.Span == UsageMath.DaySpan && u.Bucket >= dayList[0]).ToListAsync(ct);
         var hourly = await db.ServerUsage.AsNoTracking().Where(u => u.ServerId == serverId && u.Span == UsageMath.HourSpan && u.Bucket >= hourList[0]).ToListAsync(ct);
         var deviceDaily = await db.DeviceUsage.AsNoTracking().Where(u => u.ServerId == serverId && u.Span == UsageMath.DaySpan && u.Bucket >= dayList[0])
-            .Select(u => new { u.DeviceId, u.Bucket, u.RxBytes, u.TxBytes, u.OnlineSeconds }).ToListAsync(ct);
+            .Select(u => new { u.DeviceId, u.Bucket, u.RxBytes, u.TxBytes, u.OnlineSeconds, u.XrayRxBytes, u.XrayTxBytes }).ToListAsync(ct);
         var devices = await db.Devices.AsNoTracking().Select(d => new { d.Id, d.Name, d.AccountId, d.AwgPublicKey, Account = d.Account!.Name }).ToListAsync(ct);
+        var byId = devices.ToDictionary(d => d.Id);
         var byKey = devices.Where(d => d.AwgPublicKey.Length > 0).GroupBy(d => d.AwgPublicKey).ToDictionary(g => g.Key, g => g.First());
         var onlineFrom = now - OnlineWindow;
         var peers = await db.PeerCounters.AsNoTracking().Where(c => c.ServerId == serverId && c.LastHandshake > onlineFrom)
@@ -312,8 +384,21 @@ public static class StatsService
 
         return new
         {
-            server.Id, days, capacity = server.NativeCapacity,
-            hourly = hourList.Select(h => { var u = hourly.FirstOrDefault(x => x.Bucket == h); return new { at = h, down = u?.TxBytes ?? 0, up = u?.RxBytes ?? 0, peak = u?.PeakPeers ?? 0, avgPeers = u == null ? 0 : Math.Round(u.PeerSeconds / 3600.0, 1) }; }),
+            server.Id, days, capacity = server.NativeCapacity, agentVersion = server.AgentVersion,
+            host = LatestHost(server.LastReport, now),
+            hourly = hourList.Select(h =>
+            {
+                var u = hourly.FirstOrDefault(x => x.Bucket == h);
+                return new
+                {
+                    at = h, down = u?.TxBytes ?? 0, up = u?.RxBytes ?? 0, peak = u?.PeakPeers ?? 0, avgPeers = u == null ? 0 : Math.Round(u.PeerSeconds / 3600.0, 1),
+                    xrayDown = u?.XrayTxBytes ?? 0, xrayUp = u?.XrayRxBytes ?? 0,
+                    cpu = u == null || u.CpuSamples == 0 ? (double?)null : Math.Round(u.CpuSum / u.CpuSamples, 1),
+                    cpuMax = u == null || u.CpuSamples == 0 ? (double?)null : Math.Round(u.CpuMax, 1),
+                    memUsed = u?.MemUsedMax ?? 0, memTotal = u?.MemTotal ?? 0, load1 = u == null ? 0 : Math.Round(u.Load1Max, 2),
+                    netIn = u?.NetRxBytes ?? 0, netOut = u?.NetTxBytes ?? 0,
+                };
+            }),
             series = dayList.Select(d =>
             {
                 var u = daily.FirstOrDefault(x => x.Bucket == d);
@@ -321,20 +406,37 @@ public static class StatsService
                 return new
                 {
                     day = UsageMath.DayLabel(d), down = u?.TxBytes ?? 0, up = u?.RxBytes ?? 0, peak = u?.PeakPeers ?? 0,
+                    xrayDown = u?.XrayTxBytes ?? 0, xrayUp = u?.XrayRxBytes ?? 0,
+                    cpu = u == null || u.CpuSamples == 0 ? (double?)null : Math.Round(u.CpuSum / u.CpuSamples, 1),
+                    cpuMax = u == null || u.CpuSamples == 0 ? (double?)null : Math.Round(u.CpuMax, 1),
+                    memUsed = u?.MemUsedMax ?? 0, memTotal = u?.MemTotal ?? 0,
+                    netIn = u?.NetRxBytes ?? 0, netOut = u?.NetTxBytes ?? 0,
                     devices = deviceDaily.Where(x => x.Bucket == d && (x.OnlineSeconds > 0 || x.RxBytes + x.TxBytes > 0)).Select(x => x.DeviceId).Distinct().Count(),
                     attempts = at.Count, proven = at.Count(a => a.ProvenAt != null),
                 };
             }),
-            totals = new { down = daily.Sum(x => x.TxBytes), up = daily.Sum(x => x.RxBytes), peak = daily.Count == 0 ? 0 : daily.Max(x => x.PeakPeers), peerHours = Math.Round(daily.Sum(x => x.PeerSeconds) / 3600.0, 1) },
+            totals = new
+            {
+                down = daily.Sum(x => x.TxBytes), up = daily.Sum(x => x.RxBytes), peak = daily.Count == 0 ? 0 : daily.Max(x => x.PeakPeers), peerHours = Math.Round(daily.Sum(x => x.PeerSeconds) / 3600.0, 1),
+                xrayDown = daily.Sum(x => x.XrayTxBytes), xrayUp = daily.Sum(x => x.XrayRxBytes),
+                netIn = daily.Sum(x => x.NetRxBytes), netOut = daily.Sum(x => x.NetTxBytes),
+                cpu = CpuAvg(daily), cpuMax = daily.Any(x => x.CpuSamples > 0) ? Math.Round(daily.Where(x => x.CpuSamples > 0).Max(x => x.CpuMax), 1) : (double?)null,
+            },
             attempts7d = AttemptSummary(attempts.Where(a => a.CreatedAt >= week).ToList(), now),
-            now = peers.Select(p => byKey.TryGetValue(p.PublicKey, out var d)
-                    ? new { account = d.Account, accountId = (Guid?)d.AccountId, device = d.Name, p.LastHandshake }
-                    : new { account = "Не из Маяка", accountId = (Guid?)null, device = "", p.LastHandshake })
-                .OrderBy(x => x.account).ToList(),
+            now = peers.Select(p =>
+                {
+                    if (p.PublicKey.StartsWith(UsageRecorder.XrayKeyPrefix, StringComparison.Ordinal))
+                        return Guid.TryParseExact(p.PublicKey[UsageRecorder.XrayKeyPrefix.Length..], "N", out var xid) && byId.TryGetValue(xid, out var xd)
+                            ? new { account = xd.Account, accountId = (Guid?)xd.AccountId, device = xd.Name, p.LastHandshake, protocol = "Xray" }
+                            : null;
+                    return byKey.TryGetValue(p.PublicKey, out var d)
+                        ? new { account = d.Account, accountId = (Guid?)d.AccountId, device = d.Name, p.LastHandshake, protocol = "AWG" }
+                        : new { account = "Не из Маяка", accountId = (Guid?)null, device = "", p.LastHandshake, protocol = "AWG" };
+                }).Where(x => x != null).OrderBy(x => x!.account).ToList(),
             top = deviceDaily.GroupBy(x => x.DeviceId).Select(g =>
             {
                 var d = devices.FirstOrDefault(x => x.Id == g.Key);
-                return new { accountId = d?.AccountId, account = d?.Account ?? "—", device = d?.Name ?? "—", down = g.Sum(x => x.TxBytes), up = g.Sum(x => x.RxBytes), onlineSeconds = g.Sum(x => (long)x.OnlineSeconds) };
+                return new { accountId = d?.AccountId, account = d?.Account ?? "—", device = d?.Name ?? "—", down = g.Sum(x => x.TxBytes), up = g.Sum(x => x.RxBytes), xray = g.Sum(x => x.XrayTxBytes + x.XrayRxBytes), onlineSeconds = g.Sum(x => (long)x.OnlineSeconds) };
             }).OrderByDescending(x => x.down + x.up).Take(10).ToList(),
         };
     }

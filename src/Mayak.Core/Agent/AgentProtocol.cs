@@ -63,6 +63,11 @@ public sealed class AgentState
     public AgentRelay? Relay { get; set; }
     /// <summary>Как часто приходить за состоянием, секунд.</summary>
     public int PollSeconds { get; set; } = 30;
+    /// <summary>
+    /// Выход должен включить в Xray счётчики трафика по клиентам (один перезапуск Xray) и присылать их.
+    /// Старый API поле не присылает — тогда агент Xray не трогает.
+    /// </summary>
+    public bool XrayStats { get; set; }
 }
 
 public sealed class AgentPoolEndpoint
@@ -154,6 +159,39 @@ public sealed class AgentReport
     public bool SelfTestPassed { get; set; }
     /// <summary>Agent proof for provisioned exits: running AWG/Xray services, parsable config, and successful post-apply reread.</summary>
     public ProvisioningRuntimeProof? ProvisioningProof { get; set; }
+    /// <summary>Нагрузка сервера: процессор, память, диск, сеть. Старый агент не присылает.</summary>
+    public AgentHostStats? Host { get; set; }
+    /// <summary>Счётчики Xray включены и прочитаны в этом отчёте (иначе XrayUsers пуст не потому, что трафика нет).</summary>
+    public bool XrayStatsEnabled { get; set; }
+    /// <summary>Накопленный трафик Xray по клиентам с запуска Xray (email «mayak:&lt;id устройства&gt;»).</summary>
+    public List<AgentXrayUserStats> XrayUsers { get; set; } = new();
+}
+
+/// <summary>Нагрузка сервера по /proc и df. Только объёмы и доли, без процессов, адресов и содержимого.</summary>
+public sealed class AgentHostStats
+{
+    /// <summary>Загрузка процессора за время с прошлого отчёта, %. null в первом отчёте после запуска агента.</summary>
+    public double? CpuPercent { get; set; }
+    public int Cpus { get; set; }
+    public double Load1 { get; set; }
+    public long MemTotalBytes { get; set; }
+    public long MemAvailableBytes { get; set; }
+    public long DiskTotalBytes { get; set; }
+    public long DiskFreeBytes { get; set; }
+    /// <summary>Интерфейс маршрута по умолчанию и его накопленные счётчики.</summary>
+    public string NetInterface { get; set; } = "";
+    public long NetRxBytes { get; set; }
+    public long NetTxBytes { get; set; }
+    public long UptimeSeconds { get; set; }
+}
+
+public sealed class AgentXrayUserStats
+{
+    public string Email { get; set; } = "";
+    /// <summary>От пользователя к серверу.</summary>
+    public long UplinkBytes { get; set; }
+    /// <summary>От сервера к пользователю.</summary>
+    public long DownlinkBytes { get; set; }
 }
 
 public sealed class ProvisioningRuntimeProof

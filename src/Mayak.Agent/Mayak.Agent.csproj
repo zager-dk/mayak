@@ -7,7 +7,7 @@
     <LangVersion>latest</LangVersion>
     <AssemblyName>mayak-agent</AssemblyName>
     <RootNamespace>Mayak.Agent</RootNamespace>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
   <ItemGroup>

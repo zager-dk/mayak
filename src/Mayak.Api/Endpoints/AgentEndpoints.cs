@@ -78,7 +78,7 @@ public static class AgentEndpoints
 
         // ?since=<ревизия>&wait=<сек>: если ничего не менялось, ответ ждёт изменения (длинный опрос) —
         // новое устройство из приложения попадает на сервер за секунды, а не за полминуты.
-        g.MapGet(AgentPaths.State, async (long? since, int? wait, HttpContext http, MayakDb db, ClusterService cluster) =>
+        g.MapGet(AgentPaths.State, async (long? since, int? wait, HttpContext http, MayakDb db, ClusterService cluster, IConfiguration cfg) =>
         {
             var server = http.AgentServer();
             if (since != null && wait is > 0)
@@ -93,7 +93,13 @@ public static class AgentEndpoints
             }
             server.LastSeen = DateTime.UtcNow;
             await db.SaveChangesAsync();
-            try { return Results.Ok(await cluster.StateForAsync(server, http.RequestAborted)); }
+            try
+            {
+                var state = await cluster.StateForAsync(server, http.RequestAborted);
+                // Счётчики трафика Xray по клиентам на выходах (агент 0.2+ включает их один раз, это перезапуск Xray).
+                state.XrayStats = server.Role == ServerRoles.Exit && cfg.GetValue("Usage:XrayStats", true);
+                return Results.Ok(state);
+            }
             catch (RelayTargetUnavailableException)
             {
                 // A non-success state read makes current agents keep their
@@ -126,6 +132,8 @@ public static class AgentEndpoints
                 ConfigValid = report.ConfigValid,
                 SelfTestPassed = report.SelfTestPassed,
                 ProvisioningProof = report.ProvisioningProof,
+                Host = report.Host,
+                XrayStatsEnabled = report.XrayStatsEnabled,
             });
             if (server.Role == ServerRoles.Exit && string.Equals(report.Protocol, "vless", StringComparison.OrdinalIgnoreCase))
             {
@@ -197,9 +205,10 @@ public static class AgentEndpoints
                     d.TxBytes = Math.Max(d.TxBytes, p.TxBytes);
                 }
             }
-            // История для статистики админки (объём и время в сети по часам и суткам). Отчёты пула VLESS пиров AWG не несут.
-            if (server.Role == ServerRoles.Exit && !string.Equals(report.Protocol, "vless", StringComparison.OrdinalIgnoreCase))
-                await UsageRecorder.RecordAsync(db, server.Id, report.Peers, DateTime.UtcNow, http.RequestAborted);
+            // История для статистики админки: объём и время в сети по часам и суткам (AWG и Xray), нагрузка сервера.
+            // Отчёты пула VLESS этого не несут.
+            if (!string.Equals(report.Protocol, "vless", StringComparison.OrdinalIgnoreCase))
+                await UsageRecorder.RecordAsync(db, server.Id, report, DateTime.UtcNow, http.RequestAborted);
             await db.SaveChangesAsync();
             await tx.CommitAsync(http.RequestAborted);
             return Results.NoContent();
